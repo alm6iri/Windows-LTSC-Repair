@@ -9,6 +9,7 @@ Run:  python -m unittest discover -s tests -v
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -19,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from repair_core import (network_repair, update_repair, time_repair,
                          disk_repair, platform_info, strings as strings_mod,
                          eventlog)
-from repair_core.runner import CmdResult, fmt_cmd
+from repair_core.runner import CmdResult, Runner, fmt_cmd
 
 
 class FakeRunner(object):
@@ -362,6 +363,114 @@ class TestRunnerInternals(unittest.TestCase):
         rendered = fmt_cmd(["reg", "add", "HKLM\\A B", "/v", "x y"])
         self.assertIn('"HKLM\\A B"', rendered)
         self.assertIn('"x y"', rendered)
+
+
+class TestRunnerHardening(unittest.TestCase):
+    """Regression tests for the v2.2 audit fixes - runnable on any OS."""
+
+    def _runner(self):
+        events = []
+        return Runner(on_event=lambda k, p, r, l: events.append((k, p, r, l))), events
+
+    def test_service_state_fallback_parses_sc_output(self):
+        """The sc-parse fallback must still work (English hosts / tests)."""
+        runner, _ = self._runner()
+        sample = (
+            "SERVICE_NAME: wuauserv\r\n"
+            "        TYPE               : 20  WIN32_SHARE_PROCESS\r\n"
+            "        STATE              : 4  RUNNING \r\n"
+            "                                (STOPPABLE,NOT_PAUSABLE)\r\n"
+        )
+        with mock.patch.object(runner, "run",
+                               return_value=CmdResult(0, sample, "")):
+            self.assertEqual(runner.service_state("wuauserv"), "RUNNING")
+
+    def test_native_service_state_safe_off_windows(self):
+        # On non-Windows hosts the SCM path returns None (never raises),
+        # letting the fallback decide - this is exactly what CI hits.
+        from repair_core import runner as runner_mod
+        self.assertIsNone(runner_mod._native_service_state("wuauserv"))
+
+    def test_run_stream_hard_deadline_kills_stalled_process(self):
+        """A process that never exits must be killed at the deadline,
+        not hang the worker thread forever."""
+        import time as _t
+        runner, events = self._runner()
+        started = _t.monotonic()
+        rc = runner.run_stream(["sleep", "30"], timeout=1)
+        elapsed = _t.monotonic() - started
+        self.assertIsNone(rc)
+        self.assertLess(elapsed, 10)  # killed ~1s, not 30s
+        self.assertIn("cmd_timeout",
+                      [e[0] for e in events if e[0]])
+
+    def test_run_stream_streams_lines_and_returns_rc(self):
+        runner, events = self._runner()
+        seen = []
+        rc = runner.run_stream(["echo", "hello-audit"], timeout=15,
+                               on_line=seen.append)
+        self.assertEqual(rc, 0)
+        self.assertIn("hello-audit", seen)
+
+    def test_rename_dir_survives_same_second_collision(self):
+        """Two archives in the same second must not be misreported as a
+        locked directory."""
+        import tempfile as _tf
+        import time as _t
+        base = _tf.mkdtemp(prefix="fixtool_coll_")
+        try:
+            source = os.path.join(base, "src")
+            os.makedirs(source)
+            with mock.patch("repair_core.runner.time.strftime",
+                            return_value="20260101_000000"):
+                first = self._plain_rename(source)
+                os.makedirs(source)          # recreate for 2nd archive
+                second = self._plain_rename(source)
+            self.assertNotEqual(first, second)
+            self.assertTrue(second.endswith("_1"))
+            self.assertTrue(os.path.isdir(second))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    @staticmethod
+    def _plain_rename(path):
+        from repair_core.runner import Runner
+        runner = Runner(on_event=lambda *a: None)
+        return runner.rename_dir(path)
+
+
+class TestSfcDecoding(unittest.TestCase):
+    """Regression tests for the SFC output decoder (v2.2 rewrite)."""
+
+    def test_utf16le_ascii_roundtrip(self):
+        from repair_core.system_repair import _decode_sfc
+        msg = "Windows Resource Protection did not find any integrity violations."
+        self.assertEqual(_decode_sfc(msg.encode("utf-16-le")), msg)
+
+    def test_utf16le_mixed_cjk_roundtrip(self):
+        """Chinese-Windows SFC output (CJK text + ASCII paths) must be
+        detected via NUL-parity evidence, not rejected as mojibake."""
+        from repair_core.system_repair import _decode_sfc
+        msg = "Windows 资源保护找到了损坏文件 C:\\Windows\\system32\\dll 100%"
+        decoded = _decode_sfc(msg.encode("utf-16-le"))
+        self.assertIn("Windows", decoded)
+        self.assertIn("system32", decoded)
+
+    def test_legacy_codepage_not_misdecoded_as_utf16(self):
+        from repair_core.system_repair import _decode_sfc
+        msg = "Repairs complete: cafe files."
+        decoded = _decode_sfc(msg.encode("cp850"))
+        self.assertIn("Repairs complete", decoded)
+
+    def test_empty_input(self):
+        from repair_core.system_repair import _decode_sfc
+        self.assertEqual(_decode_sfc(b""), "")
+
+    def test_mojibake_detector(self):
+        from repair_core.system_repair import _looks_like_mojibake
+        self.assertFalse(_looks_like_mojibake("plain ascii text"))
+        self.assertTrue(_looks_like_mojibake(
+            "".join(chr(0x4E00 + i % 100) for i in range(100))))
 
 
 if __name__ == "__main__":

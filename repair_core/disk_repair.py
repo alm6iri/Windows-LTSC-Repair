@@ -79,7 +79,10 @@ def repair(runner, info=None):
 
     # ---- errors found: schedule the offline fix for next reboot ----------
     runner.note("disk_errors")
-    result = runner.run(["chkdsk", drive, "/f"], timeout=120,
+    # Long timeout on purpose: if the volume happens to be lockable,
+    # chkdsk /f runs the FULL repair immediately - killing it mid-fix
+    # (a 120s timeout would) risks filesystem corruption.
+    result = runner.run(["chkdsk", drive, "/f"], timeout=3600,
                         input="Y\r\n")
     if result.ok:
         runner.note("disk_scheduled", (drive,))

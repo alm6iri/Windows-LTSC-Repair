@@ -20,28 +20,45 @@ _SFC_PARTIAL = "could not be fixed"
 # Localized Windows may phrase these differently; also match by exit code.
 
 
+def _looks_like_mojibake(text):
+    """True when a large fraction of characters landed in CJK/fullwidth
+    blocks - the classic signature of bytes decoded with the WRONG
+    16-bit encoding (random BMP codepoints cluster heavily there)."""
+    if not text:
+        return True
+    cjk = sum(
+        1 for ch in text
+        if 0x3000 <= ord(ch) <= 0x9FFF or 0xFF00 <= ord(ch) <= 0xFFEF
+    )
+    return cjk / len(text) > 0.10
+
+
 def _decode_sfc(data):
-    """Best-effort decode of SFC output (UTF-16LE first, then legacy
-    code pages). Returns '' for empty input."""
+    """Best-effort decode of SFC output.
+
+    Decision order:
+    1. NUL-byte parity evidence: genuine UTF-16LE text carries NUL bytes
+       in one parity whenever it contains ASCII (paths/numbers always
+       do), regardless of the message language - byte-level proof that
+       survives even pure CJK/Arabic message text mixed with paths.
+    2. Otherwise try utf-16-le / cp850 / utf-8 in turn and REJECT any
+       candidate that looks like CJK mojibake soup.
+    Returns '' for empty input."""
     if not data:
         return ""
-    candidates = ("utf-16-le", "cp850", "utf-8")
-    best = ""
-    best_score = -1.0
-    for encoding in candidates:
+    half = len(data) // 2
+    if half:
+        nulls = data[0::2].count(0) + data[1::2].count(0)
+        if nulls / (2 * half) > 0.25:
+            return data.decode("utf-16-le", errors="replace")
+    for encoding in ("utf-16-le", "cp850", "utf-8"):
         try:
             text = data.decode(encoding, errors="ignore")
-        except (LookupError, UnicodeDecodeError):
+        except LookupError:
             continue
-        if not text:
-            continue
-        printable = sum(1 for ch in text if ch.isprintable() or ch in "\r\n\t")
-        score = printable / max(1, len(text))
-        if score > best_score:
-            best, best_score = text, score
-        if score > 0.95:
-            break
-    return best
+        if text and not _looks_like_mojibake(text):
+            return text
+    return data.decode("utf-8", errors="replace")
 
 
 def repair(runner, info=None):

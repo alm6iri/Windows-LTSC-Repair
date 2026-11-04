@@ -31,6 +31,10 @@ PROJECT_ROOT = SPECPATH  # directory containing this spec file
 # customtkinter ships JSON theme assets that MUST be bundled; collect
 # them explicitly instead of relying on hooks-contrib being present.
 ctk_datas = collect_data_files("customtkinter", include_py_files=False)
+# Ship the window icon inside the bundle too: the GUI looks it up under
+# sys._MEIPASS at runtime (spec-driven onefile builds never depend on
+# sidecar files).
+ctk_datas.append((os.path.join(PROJECT_ROOT, "app_icon.ico"), "."))
 
 a = Analysis(
     ["FixTool.py"],

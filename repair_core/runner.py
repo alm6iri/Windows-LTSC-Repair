@@ -13,18 +13,81 @@ Design goals:
   commands are passed as argv lists, eliminating quoting/injection bugs.
 """
 
+import ctypes
 import glob
 import os
 import re
 import shutil
 import stat
+import struct
 import subprocess
+import sys
+import threading
 import time
 
 # 0x08000000 = CREATE_NO_WINDOW (Windows-only constant)
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 _STATE_RE = re.compile(r"STATE\s*:\s*\d+\s+([A-Z]+)")
+
+# SERVICE_STATUS_PROCESS.dwCurrentState values -> canonical names
+# (language-independent numeric codes from the Service Control Manager).
+_SERVICE_STATE_NAMES = {
+    1: "STOPPED",
+    2: "START_PENDING",
+    3: "STOP_PENDING",
+    4: "RUNNING",
+    5: "CONTINUE_PENDING",
+    6: "PAUSE_PENDING",
+    7: "PAUSED",
+}
+
+
+def _native_service_state(name):
+    """Query the *runtime* service state through the Service Control
+    Manager API (QueryServiceStatusEx).
+
+    This is deliberately NOT `sc query` parsing: sc.exe output is
+    LOCALIZED (the STATE keyword is translated on Arabic/German/French
+    Windows), which would silently break every stop/start decision on
+    non-English systems. The SCM API returns numeric codes instead.
+
+    Returns the canonical state name or None on any failure (and always
+    None on non-Windows hosts, where the sc-parse fallback is used by
+    tests)."""
+    if os.name != "nt":
+        return None
+    try:
+        advapi32 = ctypes.windll.advapi32
+        SC_MANAGER_CONNECT = 0x0001
+        SERVICE_QUERY_STATUS = 0x0004
+        SC_STATUS_PROCESS_INFO = 0
+
+        manager = advapi32.OpenSCManagerW(None, None, SC_MANAGER_CONNECT)
+        if not manager:
+            return None
+        try:
+            service = advapi32.OpenServiceW(
+                manager, name, SERVICE_QUERY_STATUS)
+            if not service:
+                return None
+            try:
+                buf = ctypes.create_string_buffer(64)  # 36 bytes needed
+                needed = ctypes.c_uint32(0)
+                ok = advapi32.QueryServiceStatusEx(
+                    service, SC_STATUS_PROCESS_INFO, buf,
+                    ctypes.sizeof(buf), ctypes.byref(needed))
+                if not ok:
+                    return None
+                # dwCurrentState is the second DWORD of the struct.
+                code = struct.unpack_from("<I", buf, 4)[0]
+                return _SERVICE_STATE_NAMES.get(code)
+            finally:
+                advapi32.CloseServiceHandle(service)
+        finally:
+            advapi32.CloseServiceHandle(manager)
+    except Exception:
+        return None
 
 
 class CmdResult(object):
@@ -101,8 +164,16 @@ class Runner(object):
         return result
 
     def run_stream(self, cmd, timeout=3600, on_line=None):
-        """Run a long command (DISM/SFC) and stream stdout lines live.
-        Returns the exit code (None on launch/timeout failure)."""
+        """Run a long command (DISM/SFC/CHKDSK) and stream stdout lines
+        live, with a HARD overall deadline.
+
+        The read loop runs on a daemon reader thread while the main
+        worker waits with ``proc.wait(timeout)``: if the process stalls
+        without exiting (or floods output forever), we kill it at the
+        deadline instead of hanging the worker thread - and, with it,
+        the busy lock that gates the whole GUI.
+
+        Returns the exit code (None on launch failure / timeout)."""
         self._raw(fmt_cmd(cmd), "cmd")
         try:
             proc = subprocess.Popen(
@@ -118,19 +189,37 @@ class Runner(object):
         except (OSError, ValueError) as exc:
             self.note("cmd_missing", (fmt_cmd(cmd), str(exc)), "warn")
             return None
+
+        def _pump():
+            try:
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line and on_line:
+                        on_line(line)
+            except Exception:
+                pass  # reader dies with the process; never propagates
+
+        reader = threading.Thread(target=_pump, daemon=True)
+        reader.start()
         try:
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line and on_line:
-                    on_line(line)
             proc.wait(timeout=max(1, timeout))
         except subprocess.TimeoutExpired:
             proc.kill()
+            try:
+                proc.wait(timeout=10)  # reap the killed process (no zombie,
+            except Exception:          # no ResourceWarning on GC)
+                pass
             self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
             return None
         except OSError as exc:
+            proc.kill()
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                pass
             self.note("cmd_failed", (None, str(exc)), "warn")
             return None
+        reader.join(timeout=5)
         return proc.returncode
 
     def run_bytes(self, cmd, timeout=3600):
@@ -153,7 +242,14 @@ class Runner(object):
     # --------------------------------------------------------------- services
     def service_state(self, name):
         """Current service state string (RUNNING/STOPPED/...) or None when
-        the service cannot be queried."""
+        the service cannot be queried.
+
+        Primary path: SCM API (locale-independent, zero subprocess cost).
+        Fallback: `sc query` output parsing (English locale / non-Windows
+        test hosts)."""
+        state = _native_service_state(name)
+        if state is not None:
+            return state
         res = self.run(["sc", "query", name], timeout=30, report=False)
         if not res.ok:
             return None
@@ -220,6 +316,13 @@ class Runner(object):
             return None
         stamp = time.strftime("%Y%m%d_%H%M%S")
         target = "{0}{1}_{2}".format(path, suffix, stamp)
+        # Collision guard: two repairs inside the same second (or a
+        # leftover archive from a previous session) must never make the
+        # rename fail and be misreported as a "locked" directory.
+        counter = 0
+        while os.path.exists(target):
+            counter += 1
+            target = "{0}{1}_{2}_{3}".format(path, suffix, stamp, counter)
         for _attempt in range(3):
             try:
                 os.rename(path, target)
@@ -243,7 +346,12 @@ class Runner(object):
 
         try:
             if os.path.isdir(path):
-                shutil.rmtree(path, onerror=_onerror)
+                # `onerror` is deprecated in favour of `onexc` since
+                # Python 3.12 - pick the supported one (same signature).
+                if sys.version_info >= (3, 12):
+                    shutil.rmtree(path, onexc=_onerror)
+                else:
+                    shutil.rmtree(path, onerror=_onerror)
             else:
                 os.chmod(path, stat.S_IWRITE)
                 os.remove(path)
@@ -259,10 +367,4 @@ class Runner(object):
             if self.delete_path(old):
                 removed += 1
         return removed
-
-
-def _selfcheck():
-    """Import-time sanity: nothing to do yet; placeholder keeps the module
-    importable even when trimmed by packers."""
-    return True
 

@@ -34,7 +34,7 @@ repair_core/
   disk_repair.py            # SMART health + online chkdsk /scan; offline fix scheduled only when needed
   strings.py                # Full AR/EN localization (symmetric, test-enforced)
   eventlog.py               # Thread-safe event log + desktop log file
-tests/test_core.py          # 25 unit tests - run on ANY OS (Windows specifics mocked)
+tests/test_core.py          # 35 unit tests - run on ANY OS (Windows specifics mocked)
 Windows-LTSC-Repair.spec    # PyInstaller release spec (onefile, windowed, uac_admin, icon)
 packaging/
   app.manifest              # Standalone requireAdministrator + PerMonitorV2 manifest
@@ -62,6 +62,13 @@ packaging/
   local **Administrators** group — a severe privilege-escalation
   misconfiguration that has been removed and is now blocked by a
   regression unit test.
+- **Locale-independent service control:** service states are queried via
+  the SCM API (`QueryServiceStatusEx`), not by parsing `sc query` text —
+  `sc.exe` output is localized and would silently break the tool on
+  non-English Windows.
+- **Hard deadlines everywhere:** streamed commands (DISM/SFC/CHKDSK) run
+  under a watchdog that kills stalled processes, so a hung repair can
+  never freeze the worker or hold the UI busy-lock.
 - **%SystemRoot% aware:** never assumes Windows lives on `C:\`.
 
 ## Running from source 📦

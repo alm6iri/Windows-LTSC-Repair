@@ -137,13 +137,21 @@ class WindowsRepairApp(object):
 
     # -------------------------------------------------------------------- ui
     def _apply_window_icon(self):
-        icon = os.path.join(
-            os.path.dirname(os.path.abspath(sys.argv[0])), "app_icon.ico")
-        if os.path.isfile(icon):
-            try:
-                self.root.iconbitmap(icon)
-            except Exception:
-                pass
+        """Icon lookup order: PyInstaller bundle (sys._MEIPASS, populated
+        by the spec's datas) -> script directory -> skip silently."""
+        candidates = []
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(os.path.join(meipass, "app_icon.ico"))
+        candidates.append(os.path.join(
+            os.path.dirname(os.path.abspath(sys.argv[0])), "app_icon.ico"))
+        for icon in candidates:
+            if os.path.isfile(icon):
+                try:
+                    self.root.iconbitmap(icon)
+                except Exception:
+                    pass
+                return
 
     def _build_ui(self):
         s = self.s
@@ -274,10 +282,17 @@ class WindowsRepairApp(object):
 
     # ------------------------------------------------------------- log loop
     def _poll_log(self):
-        """Main-thread pump: repaints the log whenever workers appended
-        entries, and mirrors it to the desktop log file."""
+        """Main-thread pump (the ONLY place that touches Tk widgets):
+        repaints the log when workers appended entries, applies pending
+        busy-state transitions, and mirrors the log to disk. An exception
+        in one cycle must never kill the pump."""
         try:
+            if getattr(self, "_pending_busy_off", False):
+                self._pending_busy_off = False
+                self._set_busy(False)
             self._refresh()
+        except Exception:
+            pass
         finally:
             self.root.after(250, self._poll_log)
 
@@ -305,6 +320,9 @@ class WindowsRepairApp(object):
         state = "disabled" if busy else "normal"
         for btn in self._action_buttons:
             btn.configure(state=state)
+        # The reboot button is ALSO gated: rebooting mid-repair (e.g.
+        # while an archive rename is in flight) must not be possible.
+        self.btn_reboot.configure(state=state)
         self.status_label.configure(
             text=self.s["status_busy"] if busy else self.s["status_ready"],
             text_color="#E5C07B" if busy else "#98C379")
@@ -329,12 +347,16 @@ class WindowsRepairApp(object):
                 if result.get("reboot_required"):
                     self.log.add("reboot_required_note")
                 self._busy_lock.release()
-                self.root.after(0, lambda: self._set_busy(False))
+                # Never call Tk from a worker thread: the main-thread
+                # poller consumes this flag within 250 ms.
+                self._pending_busy_off = True
 
         threading.Thread(target=work, daemon=True).start()
 
     # ---------------------------------------------------------------- reboot
     def show_reboot_window(self):
+        if self._busy_lock.locked():
+            return  # an operation is in flight; rebooting now is unsafe
         s = self.s
         win = self.ctk.CTkToplevel(self.root)
         win.title(s["reboot_title"])
