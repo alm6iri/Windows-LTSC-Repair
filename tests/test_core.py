@@ -110,6 +110,52 @@ class TestStrings(unittest.TestCase):
             self.assertIn("wmic", out)
             self.assertIn("No such file", out)
 
+    def test_placeholder_indices_are_contiguous(self):
+        """Structural audit: every template's {N} indices must form a
+        contiguous 0..max range - a gap like {0},{2} means a param is
+        silently never rendered."""
+        import re as _re
+        for lang, table in strings_mod.STRINGS.items():
+            for key, template in table.items():
+                indices = sorted(set(
+                    int(m) for m in _re.findall(r"\{(\d+)\}", template)))
+                expected = list(range(max(indices) + 1)) if indices else []
+                self.assertEqual(
+                    indices, expected,
+                    "%s/%s has non-contiguous placeholders" % (lang, key))
+
+    def test_placeholder_arity_matches_across_languages(self):
+        """The same key must consume the same number of params in AR and
+        EN - otherwise one language silently drops (or misses) a value."""
+        import re as _re
+
+        def arity(template):
+            indices = [int(m) for m in _re.findall(r"\{(\d+)\}", template)]
+            return max(indices) + 1 if indices else 0
+
+        for key, ar_template in strings_mod.STRINGS["AR"].items():
+            self.assertEqual(
+                arity(ar_template),
+                arity(strings_mod.STRINGS["EN"][key]),
+                "placeholder arity mismatch for key: %s" % key)
+
+    def test_every_arity_renders_all_params(self):
+        """Rendering each template with its implied arity must surface
+        every parameter value (catches format-vs-template drift)."""
+        import re as _re
+        for lang, table in strings_mod.STRINGS.items():
+            for key, template in table.items():
+                indices = [int(m) for m in _re.findall(
+                    r"\{(\d+)\}", template)]
+                if not indices:
+                    continue
+                count = max(indices) + 1
+                params = tuple("<%d>" % i for i in range(count))
+                rendered = strings_mod.render(table, key, params)
+                for i in range(count):
+                    self.assertIn("<%d>" % i, rendered,
+                                  "%s/%s dropped param %d" % (lang, key, i))
+
     def test_render_unknown_key_never_crashes(self):
         self.assertEqual(strings_mod.render(strings_mod.STRINGS["EN"], "nope"), "nope")
 

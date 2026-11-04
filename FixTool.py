@@ -308,7 +308,12 @@ class WindowsRepairApp(object):
             text=s["status_busy"] if busy else s["status_ready"],
             text_color="#E5C07B" if busy else "#98C379",
             anchor=s["anchor"])
+        # Re-apply the pack anchor: pack options are NOT updated by
+        # configure(), so without this the log caption would keep its old
+        # RTL/LTR alignment after a language switch (mirroring bug).
+        self.log_label.pack_forget()
         self.log_label.configure(text=s["log_lbl"])
+        self.log_label.pack(anchor=s["anchor"], padx=15, pady=5)
         self._apply_layout_direction()
         self._refresh(force=True)
 
