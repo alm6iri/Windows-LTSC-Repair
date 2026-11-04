@@ -222,6 +222,34 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertFalse(info.available)
         self.assertIn("non-Windows", info.summary())
 
+    def test_info_derived_helpers(self):
+        info = platform_info.WindowsInfo()
+        info.build, info.ubr = 26200, 1742
+        self.assertEqual(info.build_full, "26200.1742")
+        info.ubr = 0
+        self.assertEqual(info.build_full, "26200")
+        info.is_win11 = True
+        self.assertEqual(info.major, 11)
+        info.is_win11 = False
+        self.assertEqual(info.major, 10)
+
+    def test_has_wmic_safe_on_any_host(self):
+        # Must always return a bool, never raise; on non-Windows hosts
+        # WMIC cannot exist, so the answer is deterministically False.
+        result = platform_info.has_wmic()
+        self.assertIsInstance(result, bool)
+        if not platform_info.IS_WINDOWS:
+            self.assertFalse(result)
+
+    def test_for_lang_fallback(self):
+        self.assertIs(strings_mod.for_lang("AR"),
+                      strings_mod.STRINGS["AR"])
+        self.assertIs(strings_mod.for_lang("EN"),
+                      strings_mod.STRINGS["EN"])
+        # Unknown language codes must fall back to EN, never crash.
+        self.assertIs(strings_mod.for_lang("XX"),
+                      strings_mod.STRINGS["EN"])
+
 
 class TestNetworkRepair(unittest.TestCase):
     def test_security_never_touches_local_groups(self):
@@ -491,6 +519,26 @@ class TestReleaseHygiene(unittest.TestCase):
         self.assertIn("true</dpiAware>", manifest)
         self.assertNotIn("PerMonitorV2", manifest)
 
+    def test_executable_name_consistent_across_release_assets(self):
+        """The product EXE name must be identical in the PyInstaller spec
+        (name=), the build script (dist check) and the README (documented
+        output) - a rename in one asset but not the others would ship a
+        broken or misdocumented release silently."""
+        exe = "Windows-LTSC-Repair"
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "Windows-LTSC-Repair.spec"),
+                  encoding="utf-8") as fh:
+            spec = fh.read()
+        self.assertIn('name="%s"' % exe, spec)
+        with open(os.path.join(root, "packaging", "build_windows.bat"),
+                  encoding="utf-8", errors="replace") as fh:
+            bat = fh.read()
+        self.assertIn("dist\\%s.exe" % exe, bat)
+        with open(os.path.join(root, "README.md"),
+                  encoding="utf-8") as fh:
+            readme = fh.read()
+        self.assertIn("dist\\%s.exe" % exe, readme)
+
 
 class TestEventLog(unittest.TestCase):
     def test_render_translates_retroactively(self):
@@ -516,6 +564,24 @@ class TestEventLog(unittest.TestCase):
             content = handle.read()
         self.assertIn("Admin privileges", content)
         os.remove(path)
+
+    def test_default_log_path_falls_back_safely(self):
+        """The log location must always resolve inside the user profile,
+        preferring Desktop and degrading to the profile root when the
+        Desktop is missing or redirected (e.g. OneDrive)."""
+        import os as _os
+        path = eventlog.default_log_path()
+        self.assertTrue(path.endswith("Fixer_Events_Log.txt"))
+        home = _os.path.expanduser("~")
+        self.assertTrue(
+            _os.path.abspath(path).startswith(_os.path.abspath(home)),
+            "log escaped the user profile: %s" % path)
+        # When the Desktop folder exists, it must be the preferred target.
+        desktop = os.path.join(home, "Desktop")
+        if os.path.isdir(desktop):
+            self.assertEqual(
+                os.path.dirname(os.path.abspath(path)),
+                os.path.abspath(desktop))
 
 
 class TestRunnerInternals(unittest.TestCase):

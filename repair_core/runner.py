@@ -8,7 +8,7 @@ Design goals:
   what ran, what failed and why, in both Arabic and English.
 * Service operations (stop/start/config) are poll-based with retries so
   shared svchost services (wuauserv etc.) are handled reliably on every
-  build from 1507 to 24H2.
+  build from 1507 to 25H2.
 * No ``shell=True`` and no string interpolation of user data anywhere:
   commands are passed as argv lists, eliminating quoting/injection bugs.
 """

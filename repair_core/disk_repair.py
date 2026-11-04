@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Disk health verification & repair (CHKDSK + SMART) - new in v2.1.
 
-Safety-first design, compatible with every SKU from 1507 to 24H2:
+Safety-first design, compatible with every SKU from 1507 to 25H2:
 
 1. SMART health of physical disks via ``Get-PhysicalDisk`` (best-effort:
    unavailable on many VMs and older storage stacks - degrades to a note).

@@ -3,7 +3,7 @@
 
 Covers: Home, Pro, Pro for Workstations, Enterprise, Education, all LTSC
 releases (2015/2016/2019/2021/2024), IoT Enterprise (incl. LTSC), and the
-full build range 1507 -> 24H2.  Detection is registry-driven (winreg) so it
+full build range 1507 -> 25H2.  Detection is registry-driven (winreg) so it
 costs zero subprocess spawns and never flashes a console window.
 
 Everything degrades gracefully: on non-Windows systems (dev/CI sandboxes)
