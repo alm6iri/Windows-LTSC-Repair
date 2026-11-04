@@ -194,9 +194,15 @@ class TestPlatformInfo(unittest.TestCase):
     def test_win11_release_mapping(self):
         self.assertEqual(platform_info.release_from_build(22000, True), "21H2")
         self.assertEqual(platform_info.release_from_build(26100, True), "24H2")
+        # 25H2 (build 26200) is the current retail Windows 11 release.
+        self.assertEqual(platform_info.release_from_build(26200, True), "25H2")
 
     def test_future_win11_build_is_not_unknown(self):
-        self.assertEqual(platform_info.release_from_build(30000, True), ">24H2")
+        # Any build above the newest known one must degrade to a "newer
+        # than X" label instead of a scary "Unknown".
+        label = platform_info.release_from_build(30000, True)
+        self.assertTrue(label.startswith(">"), label)
+        self.assertNotIn("Unknown", label)
 
     def test_summary_flags_ltsc_and_iot(self):
         info = platform_info.WindowsInfo()
@@ -728,6 +734,39 @@ class TestSourceIntegrity(unittest.TestCase):
         self.assertIn(
             "{0} unit tests".format(count), readme,
             "README claims a stale test count (actual: %d)" % count)
+
+    def test_no_unused_imports(self):
+        """Dead imports are latent bugs: they hide missing functionality,
+        confuse packagers and rot the module graph. Every import in the
+        project must be referenced somewhere in its file (beyond the
+        import statement itself)."""
+        import re
+        targets = [os.path.join(self.ROOT, "FixTool.py"),
+                   os.path.abspath(__file__)]
+        core_dir = os.path.join(self.ROOT, "repair_core")
+        for name in sorted(os.listdir(core_dir)):
+            if name.endswith(".py"):
+                targets.append(os.path.join(core_dir, name))
+        for path in targets:
+            with open(path, encoding="utf-8") as fh:
+                src = fh.read()
+            tree = ast.parse(src)
+            imported = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported.append(alias.asname
+                                        or alias.name.split(".")[0])
+                elif isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        if alias.name != "*":
+                            imported.append(alias.asname or alias.name)
+            body = re.sub(r"^import .*$", "", src, flags=re.M)
+            body = re.sub(r"^from .*? import .*$", "", body, flags=re.M)
+            for name in imported:
+                self.assertTrue(
+                    re.search(r"\b%s\b" % re.escape(name), body),
+                    "%s imports '%s' but never uses it" % (path, name))
 
 
 if __name__ == "__main__":

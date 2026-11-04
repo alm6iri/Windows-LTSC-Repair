@@ -5,11 +5,11 @@ An enterprise-grade GUI utility, written natively in **Python** with
 failures on **every edition of Windows 10 and Windows 11** — Home, Pro,
 Pro for Workstations, Enterprise, Education, **all LTSC releases
 (2015/2016/2019/2021/2024)**, IoT Enterprise (incl. IoT LTSC) — from
-build 1507 all the way to 24H2/LTSC 2024.
+build 1507 all the way to 25H2/LTSC 2024.
 
 ## Supported compatibility matrix 🧩
 
-| | Windows 10 (1507 → 22H2 / LTSC 2021) | Windows 11 (21H2 → 24H2 / LTSC 2024) |
+| | Windows 10 (1507 → 22H2 / LTSC 2021) | Windows 11 (21H2 → 25H2 / LTSC 2024) |
 |---|---|---|
 | Network repair | ✅ `wmic` fallback available | ✅ PowerShell `Enable-NetAdapter` (WMIC removed in 24H2) |
 | Update reset | ✅ incl. `doSvc` (Delivery Optimization) | ✅ |
@@ -34,7 +34,7 @@ repair_core/
   disk_repair.py            # SMART health + online chkdsk /scan; offline fix scheduled only when needed
   strings.py                # Full AR/EN localization (symmetric, test-enforced)
   eventlog.py               # Thread-safe event log + desktop log file
-tests/test_core.py          # 49 unit tests - run on ANY OS (Windows specifics mocked)
+tests/test_core.py          # 50 unit tests - run on ANY OS (Windows specifics mocked)
 Windows-LTSC-Repair.spec    # PyInstaller release spec (onefile, windowed, uac_admin, icon)
 packaging/
   app.manifest              # Standalone requireAdministrator + PerMonitorV2 manifest

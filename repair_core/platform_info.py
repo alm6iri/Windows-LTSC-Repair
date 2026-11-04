@@ -34,6 +34,7 @@ _WIN10_RELEASES = {
 
 _WIN11_RELEASES = {
     22000: "21H2", 22621: "22H2", 22631: "23H2", 26100: "24H2",
+    26200: "25H2",
 }
 
 # Editions that ship as LTSC (Long-Term Servicing Channel).
