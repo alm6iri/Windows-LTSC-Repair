@@ -29,6 +29,7 @@ from repair_core import time_repair
 from repair_core import system_repair
 from repair_core import disk_repair
 from repair_core import strings as strings_mod
+from repair_core import __version__ as CORE_VERSION
 from repair_core.eventlog import EventLog
 from repair_core.runner import Runner
 
@@ -54,8 +55,8 @@ def _message_box(text, caption, kind="error"):
 
 
 def _relaunch_elevated():
-    """Relaunch the current process elevated (UAC). Returns the
-    ShellExecuteW code (>32 == success)."""
+    """Relaunch the current process elevated (UAC). Returns a value
+    greater than 32 on success (ShellExecuteW convention), 0 on failure."""
     if getattr(sys, "frozen", False):
         # PyInstaller exe: the executable IS the program.
         params = subprocess.list2cmdline(sys.argv[1:])
@@ -63,14 +64,35 @@ def _relaunch_elevated():
         # Dev mode: python.exe "<script.py>" <args...> - properly quoted.
         params = subprocess.list2cmdline(sys.argv)
     try:
-        return ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, params, None, 1)
+        shell32 = ctypes.windll.shell32
+        # Explicit prototypes: ShellExecuteW returns HINSTANCE, which is
+        # POINTER-SIZED - with ctypes' default 32-bit c_int restype the
+        # value can be truncated on 64-bit Windows.
+        shell32.ShellExecuteW.restype = ctypes.c_void_p
+        shell32.ShellExecuteW.argtypes = [
+            ctypes.c_void_p,        # hwnd
+            ctypes.c_wchar_p,       # lpVerb
+            ctypes.c_wchar_p,       # lpFile
+            ctypes.c_wchar_p,       # lpParameters
+            ctypes.c_wchar_p,       # lpDirectory
+            ctypes.c_int,           # nShowCmd
+        ]
+        ret = shell32.ShellExecuteW(
+            None, "runas", sys.executable, params or None, None, 1)
+        return 0 if ret is None else int(ret)
     except Exception:
         return 0
 
 
 def _enable_dpi_awareness():
-    """Crisp text on high-DPI displays (best-effort)."""
+    """Crisp text on high-DPI displays.
+
+    Deliberately SYSTEM-DPI-aware (SetProcessDPIAware) and NOT
+    Per-Monitor-V2: Tk 8.6 does not handle WM_DPICHANGED, so PMv2 would
+    leave the window unscaled after a monitor change (blurry/wrong
+    sizing). System-aware + CustomTkinter's internal scaling detection
+    gives the sharpest RELIABLE rendering on every supported build.
+    Do not "upgrade" this to PMv2 without changing the GUI toolkit."""
     try:
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
@@ -82,9 +104,8 @@ def _try_load_gui():
         import customtkinter as ctk
         return ctk
     except ImportError:
-        _message_box(
-            "customtkinter is not installed.\n\nRun:  pip install customtkinter",
-            "Windows Repair Tool")
+        ar = strings_mod.STRINGS["AR"]
+        _message_box(ar["err_ctk_msg"], ar["err_ctk_title"])
         return None
 
 
@@ -129,6 +150,11 @@ class WindowsRepairApp(object):
     def s(self):
         return strings_mod.STRINGS[self.lang]
 
+    def _window_title(self):
+        """Window title carries the release version (single source of
+        truth: repair_core.__version__)."""
+        return "{0} v{1}".format(self.s["title_win"], CORE_VERSION)
+
     def _on_core_event(self, key, params, raw, level):
         """Runner callback - executes on worker threads. Only appends to
         the in-memory log; every GUI/file touch happens on the main
@@ -155,7 +181,7 @@ class WindowsRepairApp(object):
 
     def _build_ui(self):
         s = self.s
-        self.root.title(s["title_win"])
+        self.root.title(self._window_title())
         self.root.geometry("880x580")
         self.root.resizable(False, False)
 
@@ -263,7 +289,7 @@ class WindowsRepairApp(object):
         """Instant AR/EN switch, including retroactive log translation."""
         self.lang = "EN" if self.lang == "AR" else "AR"
         s = self.s
-        self.root.title(s["title_win"])
+        self.root.title(self._window_title())
         self.title_label.configure(text=s["header"])
         self.subtitle_label.configure(text=s["subheader"])
         self.sysinfo_label.configure(
@@ -406,11 +432,10 @@ class WindowsRepairApp(object):
 # ---------------------------------------------------------------------------
 
 def main():
-    # 1. Platform guard (dev/CI sandbox friendly).
+    # 1. Platform guard (dev/CI sandbox friendly) - localized message.
     if os.name != "nt":
-        sys.stderr.write(
-            "Windows Repair Tool requires Windows 10/11 "
-            "(detected: non-Windows host).\n")
+        ar = strings_mod.STRINGS["AR"]
+        sys.stderr.write(ar["err_unsupported_msg"] + "\n")
         return 1
 
     # 2. UAC elevation (correct quoting + graceful decline handling).

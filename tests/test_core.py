@@ -357,6 +357,43 @@ class TestGuiWiring(unittest.TestCase):
             self.assertTrue(hasattr(module, "repair"))
 
 
+class TestReleaseHygiene(unittest.TestCase):
+    """Release-integrity invariants: version consistency across every
+    artifact and presence of all release assets."""
+
+    def test_version_consistency_across_project(self):
+        from repair_core import __version__
+        # SemVer-shaped single source of truth.
+        self.assertRegex(__version__, r"^\d+\.\d+\.\d+$")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # The Win32 manifest must carry the same version (x.0 suffix).
+        with open(os.path.join(root, "packaging", "app.manifest"),
+                  encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertIn('version="{0}.0"'.format(__version__), manifest)
+
+    def test_release_assets_present(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for rel in ("FixTool.py", "app_icon.ico",
+                    "Windows-LTSC-Repair.spec",
+                    "packaging/app.manifest",
+                    "packaging/build_windows.bat",
+                    "requirements.txt", "README.md"):
+            self.assertTrue(
+                os.path.isfile(os.path.join(root, rel)),
+                "missing release asset: %s" % rel)
+
+    def test_spec_pins_icon_and_uac(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "Windows-LTSC-Repair.spec"),
+                  encoding="utf-8") as fh:
+            spec = fh.read()
+        self.assertIn("uac_admin=True", spec)
+        self.assertIn("console=False", spec)
+        self.assertIn("app_icon.ico", spec)
+        self.assertIn("collect_data_files", spec)
+
+
 class TestEventLog(unittest.TestCase):
     def test_render_translates_retroactively(self):
         log = eventlog.EventLog(path=os.path.join(tempfile.gettempdir(),

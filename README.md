@@ -34,7 +34,7 @@ repair_core/
   disk_repair.py            # SMART health + online chkdsk /scan; offline fix scheduled only when needed
   strings.py                # Full AR/EN localization (symmetric, test-enforced)
   eventlog.py               # Thread-safe event log + desktop log file
-tests/test_core.py          # 36 unit tests - run on ANY OS (Windows specifics mocked)
+tests/test_core.py          # 39 unit tests - run on ANY OS (Windows specifics mocked)
 Windows-LTSC-Repair.spec    # PyInstaller release spec (onefile, windowed, uac_admin, icon)
 packaging/
   app.manifest              # Standalone requireAdministrator + PerMonitorV2 manifest

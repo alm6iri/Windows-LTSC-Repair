@@ -96,6 +96,8 @@ STRINGS = {
         "err_admin_msg": "تم رفض طلب صلاحيات المسؤول.\nأعد تشغيل الأداة ووافق على نافذة UAC.",
         "err_unsupported_title": "نظام غير مدعوم",
         "err_unsupported_msg": "هذه الأداة مخصصة لأنظمة Windows 10/11 فقط.",
+        "err_ctk_title": "مكتبة الواجهة غير مثبتة",
+        "err_ctk_msg": "المكتبة customtkinter غير مثبتة.\n\nشغّل الأمر:  pip install customtkinter",
         "err_generic": "حدث خطأ غير متوقع: {0}",
         # ---- layout direction -----------------------------------------------------------
         "side_btn": "right",
@@ -192,6 +194,8 @@ STRINGS = {
         "err_admin_msg": "The UAC elevation request was declined.\nRe-run the tool and accept the UAC prompt.",
         "err_unsupported_title": "Unsupported OS",
         "err_unsupported_msg": "This tool is designed for Windows 10/11 only.",
+        "err_ctk_title": "GUI library missing",
+        "err_ctk_msg": "customtkinter is not installed.\n\nRun:  pip install customtkinter",
         "err_generic": "Unexpected error: {0}",
         # ---- layout direction -----------------------------------------------------------
         "side_btn": "left",
