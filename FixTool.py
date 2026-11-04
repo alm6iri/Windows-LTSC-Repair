@@ -275,7 +275,13 @@ class WindowsRepairApp(object):
         self.btn_disk.configure(text=s["btn_disk"])
         self.btn_reboot.configure(text=s["btn_reboot"])
         self.btn_lang.configure(text=s["lang_btn"])
-        self.status_label.configure(anchor=s["anchor"])
+        # Preserve the busy state across the language switch (the text
+        # must translate without resetting the visual state).
+        busy = self._busy_lock.locked()
+        self.status_label.configure(
+            text=s["status_busy"] if busy else s["status_ready"],
+            text_color="#E5C07B" if busy else "#98C379",
+            anchor=s["anchor"])
         self.log_label.configure(text=s["log_lbl"])
         self._apply_layout_direction()
         self._refresh(force=True)

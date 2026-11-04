@@ -104,6 +104,31 @@ class TestStrings(unittest.TestCase):
     def test_render_unknown_key_never_crashes(self):
         self.assertEqual(strings_mod.render(strings_mod.STRINGS["EN"], "nope"), "nope")
 
+    def test_every_key_used_in_code_has_translations(self):
+        """Static audit: scan the actual sources for every translation key
+        passed to Runner.note(...) / EventLog.add(...) and require an AR
+        and EN entry for each - a missing translation can never ship."""
+        import re
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        used = set()
+        core_dir = os.path.join(root, "repair_core")
+        for name in os.listdir(core_dir):
+            if name.endswith(".py"):
+                with open(os.path.join(core_dir, name), encoding="utf-8") as fh:
+                    text = fh.read()
+                used |= set(re.findall(r'\.note\(\s*"([a-z_0-9]+)"', text))
+        gui_path = os.path.join(root, "FixTool.py")
+        with open(gui_path, encoding="utf-8") as fh:
+            gui = fh.read()
+        used |= set(re.findall(r'\.add\(\s*"([a-z_0-9]+)"', gui))
+        # verdict keys in system_repair are dynamic; pin them explicitly.
+        used |= {"sfc_ok", "sfc_fixed", "sfc_partial", "sfc_unknown"}
+        self.assertGreater(len(used), 30)  # sanity: the scan found real keys
+        for lang in ("AR", "EN"):
+            missing = used - set(strings_mod.STRINGS[lang])
+            self.assertEqual(missing, set(),
+                             "keys missing %s translations: %s" % (lang, missing))
+
 
 class TestPlatformInfo(unittest.TestCase):
     def test_win10_release_mapping(self):
@@ -385,19 +410,30 @@ class TestRunnerHardening(unittest.TestCase):
                                return_value=CmdResult(0, sample, "")):
             self.assertEqual(runner.service_state("wuauserv"), "RUNNING")
 
-    def test_native_service_state_safe_off_windows(self):
-        # On non-Windows hosts the SCM path returns None (never raises),
-        # letting the fallback decide - this is exactly what CI hits.
+    def test_native_service_state_never_raises(self):
+        """Contract test (runs on Windows hosts AND CI): the SCM probe
+        either returns a canonical state name or None - it must never
+        raise, whatever the service or platform."""
         from repair_core import runner as runner_mod
-        self.assertIsNone(runner_mod._native_service_state("wuauserv"))
+        state = runner_mod._native_service_state("wuauserv")
+        valid = set(runner_mod._SERVICE_STATE_NAMES.values()) | {None}
+        self.assertIn(state, valid)
+        # A non-existent service must map to None on every platform.
+        self.assertIsNone(
+            runner_mod._native_service_state("DefinitelyNotAService123"))
 
     def test_run_stream_hard_deadline_kills_stalled_process(self):
         """A process that never exits must be killed at the deadline,
-        not hang the worker thread forever."""
+        not hang the worker thread forever.
+
+        Uses sys.executable (NOT `sleep`/`echo`): POSIX binaries don't
+        exist on Windows, and this suite gates the Windows release build
+        - every command here must run identically on BOTH platforms."""
         import time as _t
         runner, events = self._runner()
+        stall = [sys.executable, "-c", "import time; time.sleep(30)"]
         started = _t.monotonic()
-        rc = runner.run_stream(["sleep", "30"], timeout=1)
+        rc = runner.run_stream(stall, timeout=1)
         elapsed = _t.monotonic() - started
         self.assertIsNone(rc)
         self.assertLess(elapsed, 10)  # killed ~1s, not 30s
@@ -407,8 +443,8 @@ class TestRunnerHardening(unittest.TestCase):
     def test_run_stream_streams_lines_and_returns_rc(self):
         runner, events = self._runner()
         seen = []
-        rc = runner.run_stream(["echo", "hello-audit"], timeout=15,
-                               on_line=seen.append)
+        hello = [sys.executable, "-c", "print('hello-audit')"]
+        rc = runner.run_stream(hello, timeout=30, on_line=seen.append)
         self.assertEqual(rc, 0)
         self.assertIn("hello-audit", seen)
 

@@ -5,7 +5,7 @@ REM  Produces: dist\Windows-LTSC-Repair.exe  (onefile, windowed,
 REM            requireAdministrator manifest, multi-resolution icon)
 REM =====================================================================
 setlocal
-cd /d "%~dp0\.."
+cd /d "%~dp0.."
 
 echo [1/4] Checking Python...
 python --version || goto :fail
