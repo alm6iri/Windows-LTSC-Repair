@@ -8,6 +8,7 @@ are verified without touching a real system.
 Run:  python -m unittest discover -s tests -v
 """
 
+import ast
 import os
 import shutil
 import sys
@@ -659,6 +660,74 @@ class TestSfcDecoding(unittest.TestCase):
         self.assertFalse(_looks_like_mojibake("plain ascii text"))
         self.assertTrue(_looks_like_mojibake(
             "".join(chr(0x4E00 + i % 100) for i in range(100))))
+
+
+
+class TestSourceIntegrity(unittest.TestCase):
+    """Guards against SILENT shadowing hazards that Python permits:
+    duplicate dict keys and duplicate method names both override their
+    predecessors without any error, so a future edit could silently
+    disable a translation or a test. These invariants make that
+    impossible to reintroduce."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    @staticmethod
+    def _parse(path):
+        import ast
+        with open(path, encoding="utf-8") as fh:
+            return ast.parse(fh.read())
+
+    def test_no_duplicate_string_keys(self):
+        """A duplicated key in a strings dict literal silently overrides
+        the earlier entry - the AR or EN table would lose a translation
+        with zero symptoms."""
+        tree = self._parse(os.path.join(self.ROOT, "repair_core",
+                                        "strings.py"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Dict):
+                seen = set()
+                for key in node.keys:
+                    if isinstance(key, ast.Constant) \
+                            and isinstance(key.value, str):
+                        self.assertNotIn(
+                            key.value, seen,
+                            "duplicate key shadows an earlier entry: %s"
+                            % key.value)
+                        seen.add(key.value)
+
+    def test_no_duplicate_test_methods(self):
+        """A duplicated test method name silently shadows the earlier
+        test - the suite count would drop with zero symptoms."""
+        path = os.path.abspath(__file__)
+        tree = self._parse(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                seen = set()
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef):
+                        self.assertNotIn(
+                            item.name, seen,
+                            "duplicate method shadows an earlier test: "
+                            "%s.%s" % (node.name, item.name))
+                        seen.add(item.name)
+
+    def test_readme_test_count_is_accurate(self):
+        """The README's stated test count must equal the number of test
+        methods actually defined - documentation can never drift from
+        reality."""
+        tree = self._parse(os.path.abspath(__file__))
+        count = sum(
+            1 for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name.startswith("test_")
+        )
+        with open(os.path.join(self.ROOT, "README.md"),
+                  encoding="utf-8") as fh:
+            readme = fh.read()
+        self.assertIn(
+            "{0} unit tests".format(count), readme,
+            "README claims a stale test count (actual: %d)" % count)
 
 
 if __name__ == "__main__":
