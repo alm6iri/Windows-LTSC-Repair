@@ -19,8 +19,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from repair_core import (network_repair, update_repair, time_repair,
-                         disk_repair, platform_info, strings as strings_mod,
-                         eventlog)
+                         system_repair, disk_repair, platform_info,
+                         strings as strings_mod, eventlog)
 from repair_core.runner import CmdResult, Runner, fmt_cmd
 
 
@@ -538,6 +538,122 @@ class TestReleaseHygiene(unittest.TestCase):
                   encoding="utf-8") as fh:
             readme = fh.read()
         self.assertIn("dist\\%s.exe" % exe, readme)
+
+
+class TestEndToEndIntegration(unittest.TestCase):
+    """The full-pipeline E2E contract that was previously verified only
+    by manual smoke scripts: every repair module runs through the REAL
+    Runner event pipeline (note/raw/fmt_cmd) into a REAL EventLog, with
+    no real commands executed. Guards the module -> runner -> eventlog
+    -> strings flow end to end, on any OS."""
+
+    def _pipeline_runner(self, log, stream_rc=0):
+        class PipelineRunner(Runner):
+            def run(self, cmd, timeout=120, report=True, input=None):
+                if report:
+                    self._raw(fmt_cmd(cmd), "cmd")
+                return CmdResult(0, "none", "")
+
+            def run_stream(self, cmd, timeout=3600, on_line=None):
+                self._raw(fmt_cmd(cmd), "cmd")
+                return stream_rc
+
+            def run_bytes(self, cmd, timeout=3600):
+                self._raw(fmt_cmd(cmd), "cmd")
+                return 0, ("did not find any integrity violations"
+                           .encode("utf-16-le"))
+
+            def stop_service(self, name, timeout=30):
+                return True
+
+            def start_service(self, name, wait=15, retries=1):
+                return True
+
+            def set_start_mode(self, name, mode):
+                return True
+
+            def rename_dir(self, path, suffix=".bak"):
+                return path + ".bak_E2E"
+
+            def delete_path(self, path):
+                return True
+
+            def cleanup_backups(self, path, suffix=".bak"):
+                return 0
+
+        return PipelineRunner(log.add)
+
+    SCENARIOS = [
+        # (tag, module, stream exit code, expected reboot_required)
+        # The stream code maps to chkdsk /scan for disk scenarios and to
+        # DISM for the system-files scenario; SFC output is fed as real
+        # UTF-16LE bytes through run_bytes.
+        ("net", network_repair, 0, True),       # winsock/ip resets
+        ("upd", update_repair, 0, False),
+        ("time", time_repair, 0, False),
+        ("sys", system_repair, 0, False),       # SFC verdict: no violations
+        ("disk-healthy", disk_repair, 0, False),
+        ("disk-dirty", disk_repair, 2, True),   # chkdsk /f scheduled
+    ]
+
+    def _run_all(self, log):
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for module in (network_repair, update_repair, time_repair):
+                stack.enter_context(mock.patch.object(
+                    module, "service_exists", return_value=True))
+            stack.enter_context(mock.patch(
+                "os.path.isdir", return_value=True))
+            stack.enter_context(mock.patch.object(
+                platform_info, "systemroot", return_value="C:\\Windows"))
+            results = {}
+            for tag, module, scan_rc, _expected in self.SCENARIOS:
+                runner = self._pipeline_runner(log, stream_rc=scan_rc)
+                results[tag] = module.repair(runner, None)
+            return results
+
+    def test_six_scenarios_flags_and_security(self):
+        log = eventlog.EventLog(path=os.path.join(
+            tempfile.gettempdir(), "fixtool_e2e.log"))
+        log.add("start_msg")
+        results = self._run_all(log)
+        for tag, _module, _rc, expected in self.SCENARIOS:
+            self.assertEqual(
+                results[tag].get("reboot_required"), expected,
+                "wrong reboot_required for scenario %s: %s"
+                % (tag, results[tag]))
+        # Security invariants over the FULL rendered pipeline output.
+        blob = " ".join(log.render(strings_mod.STRINGS["EN"])).lower()
+        self.assertNotIn("localgroup", blob)
+        self.assertNotIn("administrators", blob)
+        self.assertNotIn("://windows.com", blob)
+        # Key artifacts of every module flowed through the pipeline.
+        self.assertIn("enable-netadapter", blob)        # network (WMIC-free)
+        self.assertIn("softwaredistribution.bak_e2e", blob)  # archived, not deleted
+        self.assertIn("time.windows.com,0x9", blob)     # valid NTP peer
+        self.assertIn("dism", blob)                     # component store
+        self.assertIn("chkdsk", blob)                   # disk health
+        self.assertGreater(len(log.entries), 40)
+
+    def test_log_dual_language_render_and_save(self):
+        log = eventlog.EventLog(path=os.path.join(
+            tempfile.gettempdir(), "fixtool_e2e_i18n.log"))
+        log.add("start_msg")
+        self._run_all(log)
+        ar = " ".join(log.render(strings_mod.STRINGS["AR"]))
+        en = " ".join(log.render(strings_mod.STRINGS["EN"]))
+        # Arabic surface renders real Arabic text (not raw keys).
+        self.assertIn("تصفير", ar)               # net_winsock
+        self.assertIn("جدولة", ar)               # disk_scheduled (dirty)
+        self.assertNotIn("net_winsock", ar)      # no raw keys leaked
+        self.assertIn("Winsock", en)
+        self.assertIn("scheduled", en)
+        # The disk-mirror writes cleanly and mirrors both tables.
+        self.assertTrue(log.save(strings_mod.STRINGS["AR"]))
+        with open(log.path, encoding="utf-8") as fh:
+            content = fh.read()
+        self.assertIn("تصفير", content)
+        os.remove(log.path)
 
 
 class TestEventLog(unittest.TestCase):
