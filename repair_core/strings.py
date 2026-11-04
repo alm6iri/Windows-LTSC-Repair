@@ -51,6 +51,7 @@ STRINGS = {
         "dir_missing": "المجلد غير موجود (سيعيد النظام إنشاءه تلقائياً): {0}",
         "dir_archived": "تمت أرشفة المجلد القديم إلى: {0}",
         "dir_archive_failed": "تعذر أرشفة المجلد (قد يكون مقفلاً) وسيتم تخطيه بأمان: {0}",
+        "backup_delete_failed": "تعذر حذف نسخة احتياطية قديمة (قد تكون مقفلة) وسيُعاد المحاولة لاحقاً: {0}",
         "upd_starting": "إعادة تشغيل سلسلة خدمات التحديث…",
         "upd_rebuilt": "تمت استعادة أوضاع الخدمات الافتراضية بنجاح.",
         # ---- time module ---------------------------------------------------------
@@ -82,7 +83,7 @@ STRINGS = {
         "disk_failed": "تعذر تنفيذ/جدولة فحص القرص (رمز {0}).",
         # ---- runner / infra --------------------------------------------------------
         "cmd_timeout": "انتهت المهلة الزمنية للأمر بعد {1} ثانية: {0}",
-        "cmd_missing": "تعذر تشغيل الأمر (غير موجود أو محظور): {0}",
+        "cmd_missing": "تعذر تشغيل الأمر: {0} — السبب: {1}",
         "cmd_failed": "فشل الأمر (رمز {0}): {1}",
         "service_stop_timeout": "تعذر إيقاف الخدمة خلال المهلة: {0}",
         "service_start_failed": "تعذر تشغيل الخدمة (قد تكون من النوع اليدوي بلا مهام): {0}",
@@ -149,6 +150,7 @@ STRINGS = {
         "dir_missing": "Directory not found (Windows will recreate it): {0}",
         "dir_archived": "Archived old directory to: {0}",
         "dir_archive_failed": "Could not archive directory (possibly locked) - safely skipped: {0}",
+        "backup_delete_failed": "Could not delete an old backup (possibly locked) - will retry next session: {0}",
         "upd_starting": "Restarting the update service chain…",
         "upd_rebuilt": "Default service start modes restored successfully.",
         # ---- time module ---------------------------------------------------------
@@ -180,7 +182,7 @@ STRINGS = {
         "disk_failed": "Could not run/schedule the disk check (code {0}).",
         # ---- runner / infra --------------------------------------------------------
         "cmd_timeout": "Command timed out after {1}s: {0}",
-        "cmd_missing": "Could not launch command (missing or blocked): {0}",
+        "cmd_missing": "Could not launch command: {0} — reason: {1}",
         "cmd_failed": "Command failed (code {0}): {1}",
         "service_stop_timeout": "Service could not be stopped in time: {0}",
         "service_start_failed": "Service could not be started (may be on-demand with no tasks): {0}",

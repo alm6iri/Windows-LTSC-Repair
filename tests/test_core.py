@@ -101,6 +101,15 @@ class TestStrings(unittest.TestCase):
         self.assertIn("5", out)
         self.assertIn("sc start x", out)
 
+    def test_cmd_missing_carries_os_reason(self):
+        """REGRESSION (v2.2.2): the runner passes (cmd, os_reason) but the
+        old template had only {0}, silently swallowing the OS error text."""
+        for lang in ("AR", "EN"):
+            out = strings_mod.render(strings_mod.STRINGS[lang],
+                                     "cmd_missing", ("wmic", "No such file"))
+            self.assertIn("wmic", out)
+            self.assertIn("No such file", out)
+
     def test_render_unknown_key_never_crashes(self):
         self.assertEqual(strings_mod.render(strings_mod.STRINGS["EN"], "nope"), "nope")
 
@@ -267,6 +276,30 @@ class TestTimeRepair(unittest.TestCase):
         self.assertIn("/resync", blob)
         self.assertIn("w32tm", blob)
 
+    def test_start_mode_configured_after_reregister(self):
+        """REGRESSION (v2.2.2): `w32tm /unregister` deletes the service
+        registration, wiping any earlier `sc config`; the auto start mode
+        must therefore be applied AFTER /register or it silently never
+        persists."""
+        runner = FakeRunner()
+        with mock.patch.object(time_repair, "service_exists",
+                               return_value=True):
+            time_repair.repair(runner, None)
+        register_idx = None
+        config_idx = None
+        for i, call in enumerate(runner.calls):
+            if call[0] == "run" and call[1][:2] == ("w32tm", "/register"):
+                register_idx = i
+            if call[0] == "config" and call[1] == "w32time":
+                config_idx = i
+        self.assertIsNotNone(register_idx)
+        self.assertIsNotNone(config_idx)
+        self.assertGreater(config_idx, register_idx,
+                           "sc config must run AFTER w32tm /register")
+        modes = {c[2] for c in runner.calls
+                 if c[0] == "config" and c[1] == "w32time"}
+        self.assertEqual(modes, {"auto"})
+
     def test_resync_retries_then_reports_failure(self):
         runner = FakeRunner()
         resync = ("w32tm", "/resync", "/force")
@@ -393,6 +426,18 @@ class TestReleaseHygiene(unittest.TestCase):
         self.assertIn("app_icon.ico", spec)
         self.assertIn("collect_data_files", spec)
 
+    def test_manifest_dpi_matches_runtime_choice(self):
+        """The standalone manifest must declare SYSTEM dpi-aware, matching
+        the app's documented runtime choice (Tk 8.6 cannot handle
+        WM_DPICHANGED; PMv2 would leave windows unscaled)."""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "packaging", "app.manifest"),
+                  encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertIn("<dpiAware", manifest)
+        self.assertIn("true</dpiAware>", manifest)
+        self.assertNotIn("PerMonitorV2", manifest)
+
 
 class TestEventLog(unittest.TestCase):
     def test_render_translates_retroactively(self):
@@ -502,6 +547,30 @@ class TestRunnerHardening(unittest.TestCase):
             self.assertNotEqual(first, second)
             self.assertTrue(second.endswith("_1"))
             self.assertTrue(os.path.isdir(second))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_cleanup_backups_reports_locked_backup(self):
+        """REGRESSION (v2.2.2): a locked old backup used to be skipped
+        silently; it must now emit a warning so the operator knows."""
+        import tempfile as _tf
+        events = []
+        runner = Runner(on_event=lambda k, p, r, l: events.append((k, p, l)))
+        base = _tf.mkdtemp(prefix="fixtool_bak_")
+        try:
+            live = os.path.join(base, "dir")
+            os.makedirs(live)
+            locked = live + ".bak_20260101_000000"
+            with open(locked, "w", encoding="utf-8") as fh:
+                fh.write("old backup")
+            with mock.patch.object(Runner, "delete_path",
+                                   return_value=False):
+                removed = runner.cleanup_backups(live)
+            self.assertEqual(removed, 0)
+            warns = [e for e in events
+                     if e[0] == "backup_delete_failed" and e[2] == "warn"]
+            self.assertEqual(len(warns), 1)
+            self.assertIn("20260101", warns[0][1][0])
         finally:
             shutil.rmtree(base, ignore_errors=True)
 

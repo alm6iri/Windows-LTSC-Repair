@@ -361,10 +361,14 @@ class Runner(object):
 
     def cleanup_backups(self, path, suffix=".bak"):
         """Remove leftovers from previous repair sessions:
-        `<path>.bak_*` older archives - keeps the system tidy forever."""
+        `<path>.bak_*` older archives - keeps the system tidy forever.
+        A backup that cannot be deleted (e.g. still locked) is reported
+        as a warning instead of failing silently."""
         removed = 0
         for old in glob.glob(glob.escape(path) + suffix + "_*"):
             if self.delete_path(old):
                 removed += 1
+            else:
+                self.note("backup_delete_failed", (old,), "warn")
         return removed
 

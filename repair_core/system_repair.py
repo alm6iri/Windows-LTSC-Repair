@@ -77,7 +77,8 @@ def repair(runner, info=None):
             runner.note("dism_ok")
         else:
             # Non-fatal: SFC can still repair in-place; report and continue.
-            runner.note("dism_failed", (rc,), "warn")
+            runner.note("dism_failed",
+                        (rc if rc is not None else "-",), "warn")
     else:
         runner.note("dism_missing", (), "warn")
 

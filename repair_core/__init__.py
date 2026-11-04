@@ -8,7 +8,7 @@ and only *consumes* this package, which keeps every command decision
 unit-testable on any OS.
 """
 
-__version__ = "2.2.1"
+__version__ = "2.2.2"
 __all__ = [
     "platform_info",
     "runner",

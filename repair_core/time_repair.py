@@ -21,13 +21,20 @@ def repair(runner, info=None):
     if service_exists("w32time"):
         runner.note("time_stopping")
         runner.stop_service("w32time", timeout=15)
-        runner.set_start_mode("w32time", "auto")
 
     runner.note("time_reregister")
     runner.run(["w32tm", "/unregister"], timeout=60)
     time.sleep(1.0)
     runner.run(["w32tm", "/register"], timeout=60)
     time.sleep(1.0)
+
+    # IMPORTANT: the start mode must be configured AFTER /register -
+    # `w32tm /unregister` deletes the service registration (wiping any
+    # earlier sc config) and /register recreates it with the stock
+    # Manual start type. Configuring before the re-register was a silent
+    # no-op in earlier revisions.
+    if service_exists("w32time"):
+        runner.set_start_mode("w32time", "auto")
 
     if not runner.start_service("w32time", wait=15, retries=2):
         runner.note("time_service_failed", (), "warn")

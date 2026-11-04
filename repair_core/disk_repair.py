@@ -87,5 +87,6 @@ def repair(runner, info=None):
     if result.ok:
         runner.note("disk_scheduled", (drive,))
         return {"reboot_required": True}
-    runner.note("disk_failed", (result.rc,), "warn")
+    runner.note("disk_failed",
+                (result.rc if result.rc is not None else "-",), "warn")
     return {"reboot_required": False}

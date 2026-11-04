@@ -2,7 +2,7 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity type="win32"
                     name="Windows.LTSC.Repair"
-                    version="2.2.1.0"
+                    version="2.2.2.0"
                     processorArchitecture="*"/>
   <description>Windows Repair Tool - all Windows 10/11 editions (incl. LTSC/IoT)</description>
 
@@ -25,10 +25,12 @@
     </application>
   </compatibility>
 
-  <!-- Per-Monitor V2 DPI awareness: crisp UI on scaled displays. -->
+  <!-- System-DPI awareness: deliberately matches the app's runtime choice
+       (SetProcessDPIAware). Tk 8.6 does not handle WM_DPICHANGED, so
+       Per-Monitor-V2 would leave windows unscaled after a monitor change. -->
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
-      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
     </windowsSettings>
   </application>
 </assembly>
