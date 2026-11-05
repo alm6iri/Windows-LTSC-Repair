@@ -1,7 +1,6 @@
 build/
 dist/
 __pycache__/
-*.spec
 *.log
 Fixer_Events_Log.txt
 .vscode/

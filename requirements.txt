@@ -1,0 +1,5 @@
+# Windows Repair Tool (LTSC + all Windows 10/11 editions)
+customtkinter>=5.2.2
+
+# Optional - only needed to build the standalone executable:
+# pyinstaller>=6.0
