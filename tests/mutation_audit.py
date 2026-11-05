@@ -60,8 +60,8 @@ MUTANTS = [
      ""),
     ("M9 run_stream: exit code swallowed (always 0)",
      "repair_core/runner.py",
-     "        reader.join(timeout=5)\n        return proc.returncode",
-     "        reader.join(timeout=5)\n        return 0"),
+     "            reader.join(timeout=5)\n            return proc.returncode",
+     "            reader.join(timeout=5)\n            return 0"),
     ("M10 chkdsk /f timeout dropped to 120s (mid-repair kill)",
      "repair_core/disk_repair.py",
      'result = runner.run(["chkdsk", drive, "/f"], timeout=3600,',
@@ -70,10 +70,15 @@ MUTANTS = [
 
 
 def run_suite():
-    proc = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-        capture_output=True, text=True, timeout=300)
-    return proc.returncode
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            capture_output=True, text=True, timeout=300)
+        return proc.returncode
+    except subprocess.TimeoutExpired:
+        # A mutant that HANGS the suite is definitively detected -
+        # report it as caught rather than crashing the harness.
+        return 124
 
 
 def main():
@@ -90,7 +95,7 @@ def main():
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(src.replace(old, new, 1))
             rc = run_suite()
-            verdict = "CAUGHT (suite failed, rc=%d)" % rc if rc != 0 \
+            verdict = ("CAUGHT (suite failed, rc=%d)" % rc) if rc != 0 \
                 else "SURVIVED (suite stayed green! GUARD HOLE)"
             report.append((label, verdict))
             with open(path, "w", encoding="utf-8") as fh:  # restore

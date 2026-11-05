@@ -2,7 +2,7 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity type="win32"
                     name="Windows.LTSC.Repair"
-                    version="2.3.0.0"
+                    version="2.3.1.0"
                     processorArchitecture="*"/>
   <description>Windows Repair Tool - all Windows 10/11 editions (incl. LTSC/IoT)</description>
 

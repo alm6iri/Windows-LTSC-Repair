@@ -401,25 +401,37 @@ class TestTimeRepair(unittest.TestCase):
         self.assertIn("w32tm", blob)
 
     def test_start_mode_configured_after_reregister(self):
-        """REGRESSION (v2.2.2): `w32tm /unregister` deletes the service
-        registration, wiping any earlier `sc config`; the auto start mode
-        must therefore be applied AFTER /register or it silently never
-        persists."""
+        """REGRESSION (v2.2.2, guard hardened in round 14): `w32tm
+        /unregister` deletes the service registration, wiping any
+        earlier `sc config`; the auto start mode must therefore be
+        applied AFTER /register or it silently never persists.
+
+        Guard hardening: the original version of this test compared the
+        LAST config against the register call, so a mutant that ADDED a
+        spurious early config still passed (the late, legitimate config
+        kept the assertion green). The guard now asserts that NO config
+        call exists before /register at all."""
         runner = FakeRunner()
         with mock.patch.object(time_repair, "service_exists",
-                               return_value=True):
+                               return_value=True), \
+                mock.patch.object(time_repair.time, "sleep", lambda s: None):
             time_repair.repair(runner, None)
         register_idx = None
-        config_idx = None
+        config_indices = []
         for i, call in enumerate(runner.calls):
             if call[0] == "run" and call[1][:2] == ("w32tm", "/register"):
-                register_idx = i
+                if register_idx is None:
+                    register_idx = i
             if call[0] == "config" and call[1] == "w32time":
-                config_idx = i
+                config_indices.append(i)
         self.assertIsNotNone(register_idx)
-        self.assertIsNotNone(config_idx)
-        self.assertGreater(config_idx, register_idx,
-                           "sc config must run AFTER w32tm /register")
+        self.assertTrue(config_indices,
+                        "no w32time start-mode configuration at all")
+        early = [i for i in config_indices if i < register_idx]
+        self.assertEqual(
+            early, [],
+            "w32time was configured BEFORE w32tm /register (indices %s) "
+            "- /unregister will wipe it" % early)
         modes = {c[2] for c in runner.calls
                  if c[0] == "config" and c[1] == "w32time"}
         self.assertEqual(modes, {"auto"})
@@ -717,6 +729,249 @@ class TestEndToEndIntegration(unittest.TestCase):
         os.remove(log.path)
 
 
+# ---------------------------------------------------------------------------
+# Headless GUI harness: a recording mock of customtkinter that lets the
+# REAL WindowsRepairApp logic (busy-lock races, RTL/LTR mirroring, the
+# main-thread pump) be tested without any display or Tk installation.
+# ---------------------------------------------------------------------------
+class _MockWidget(object):
+    """Recording stand-in for any CustomTkinter widget."""
+
+    def __init__(self, master=None, **kwargs):
+        self.master = master
+        self.kwargs = dict(kwargs)
+        self.command = kwargs.get("command")
+        self.configures = []
+        self.packs = []
+        self.grids = []
+        self.forgotten = 0
+        self.destroyed = 0
+
+    def configure(self, **kwargs):
+        self.configures.append(kwargs)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def pack(self, **kwargs):
+        self.packs.append(kwargs)
+
+    def pack_forget(self):
+        self.forgotten += 1
+
+    def grid(self, **kwargs):
+        self.grids.append(kwargs)
+
+    def destroy(self):
+        self.destroyed += 1
+
+    def pack_propagate(self, _flag):
+        pass
+
+    def tag_config(self, *_args, **_kwargs):
+        pass
+
+    def insert(self, *_a, **_k):
+        pass
+
+    def delete(self, *_a, **_k):
+        pass
+
+    def see(self, *_a):
+        pass
+
+    def attributes(self, *_args, **_kwargs):
+        pass
+
+    def grab_set(self):
+        pass
+
+    def resizable(self, *_a):
+        pass
+
+    def geometry(self, _value):
+        pass
+
+    def title(self, text=None):
+        if not hasattr(self, "titles"):
+            self.titles = []
+        if text is not None:
+            self.titles.append(text)
+        return self.titles[-1] if self.titles else ""
+
+
+class _MockCtkRoot(_MockWidget):
+    """Recording stand-in for ctk.CTk()."""
+
+    def __init__(self):
+        super().__init__()
+        self.titles = []
+        self.after_calls = []
+        self.iconbitmap_calls = []
+
+    def title(self, text=None):
+        if text is not None:
+            self.titles.append(text)
+        return self.titles[-1] if self.titles else ""
+
+    def iconbitmap(self, path):
+        self.iconbitmap_calls.append(path)
+
+    def after(self, ms, callback):
+        self.after_calls.append((ms, callback))
+
+    def mainloop(self):
+        pass
+
+
+class _MockToplevel(_MockWidget):
+    all_instances = []
+
+    def __init__(self, master=None, **kwargs):
+        super().__init__(master, **kwargs)
+        _MockToplevel.all_instances.append(self)
+
+
+def _make_mock_ctk():
+    import types
+    module = types.ModuleType("mock_customtkinter")
+    module.set_appearance_mode = lambda *a, **k: None
+    module.set_default_color_theme = lambda *a, **k: None
+    module.CTk = _MockCtkRoot
+    module.CTkLabel = _MockWidget
+    module.CTkButton = _MockWidget
+    module.CTkFrame = _MockWidget
+    module.CTkTextbox = _MockWidget
+    module.CTkToplevel = _MockToplevel
+    module.CTkFont = lambda **kwargs: kwargs
+    return module
+
+
+class TestGuiAppLogic(unittest.TestCase):
+    """The REAL WindowsRepairApp logic, exercised headless through the
+    recording customtkinter mock - the GUI layer was the last untested
+    part of the project."""
+
+    def _make_app(self):
+        import FixTool
+        _MockToplevel.all_instances = []
+        log_path = os.path.join(tempfile.gettempdir(),
+                                "fixtool_gui_headless.log")
+        with mock.patch.object(eventlog, "default_log_path",
+                               return_value=log_path):
+            app = FixTool.WindowsRepairApp(_make_mock_ctk())
+        return app, log_path
+
+    def test_operation_dispatch_is_race_free(self):
+        """Clicking a second operation while one is in flight must be a
+        no-op (busy lock), and the buttons must re-enable only after the
+        main-thread pump consumed the completion flag."""
+        import time as _t
+        app, log_path = self._make_app()
+        try:
+            released = threading.Event()
+
+            def slow_repair(_runner, _info):
+                released.wait(10)
+                return {"reboot_required": False}
+
+            with mock.patch.object(network_repair, "repair", slow_repair):
+                app.btn_net.command()   # starts the (blocked) worker
+                app.btn_upd.command()   # must be IGNORED while busy
+                keys = [e["key"] for e in app.log.entries]
+                self.assertIn("net_start", keys)
+                self.assertNotIn("upd_start", keys)
+                self.assertEqual(
+                    app.btn_net.configures[-1].get("state"), "disabled")
+                released.set()
+                deadline = _t.monotonic() + 5
+                while _t.monotonic() < deadline:
+                    app._poll_log()
+                    if not getattr(app, "_pending_busy_off", False) and \
+                            app.btn_net.configures and \
+                            app.btn_net.configures[-1].get("state") \
+                            == "normal":
+                        break
+                    _t.sleep(0.02)
+                self.assertEqual(
+                    app.btn_net.configures[-1].get("state"), "normal")
+                # Once idle, the second operation is accepted.
+                with mock.patch.object(update_repair, "repair",
+                                       lambda r, i: {}):
+                    app.btn_upd.command()
+                    keys = [e["key"] for e in app.log.entries]
+                    self.assertIn("upd_start", keys)
+                    self.assertIn("net_end", keys)
+        finally:
+            if os.path.exists(log_path):
+                os.remove(log_path)
+
+    def test_language_toggle_mirrors_layout(self):
+        """AR -> EN must flip every anchor/side AND re-pack the log
+        caption (pack options are immutable via configure - the v2.2.3
+        mirroring fix)."""
+        app, log_path = self._make_app()
+        try:
+            self.assertEqual(app.log_label.packs[0].get("anchor"), "e")
+            app.btn_lang.command()  # AR -> EN
+            self.assertGreaterEqual(app.log_label.forgotten, 1)
+            self.assertEqual(app.log_label.packs[-1].get("anchor"), "w")
+            self.assertEqual(
+                app.status_label.configures[-1].get("anchor"), "w")
+            self.assertIn(
+                "Ready", app.status_label.configures[-1].get("text", ""))
+            self.assertEqual(
+                app.button_frame.packs[-1].get("side"), "left")
+            self.assertEqual(app.log_frame.packs[-1].get("side"), "right")
+            from repair_core import __version__ as core_version
+            self.assertTrue(app.root.titles[-1].endswith(core_version))
+        finally:
+            os.remove(log_path)
+
+    def test_busy_state_disables_all_buttons_including_reboot(self):
+        app, log_path = self._make_app()
+        try:
+            app._set_busy(True)
+            for btn in app._action_buttons + [app.btn_reboot]:
+                self.assertEqual(
+                    btn.configures[-1].get("state"), "disabled")
+            app._set_busy(False)
+            for btn in app._action_buttons + [app.btn_reboot]:
+                self.assertEqual(
+                    btn.configures[-1].get("state"), "normal")
+        finally:
+            os.remove(log_path)
+
+    def test_reboot_dialog_blocked_while_busy(self):
+        app, log_path = self._make_app()
+        try:
+            app._busy_lock.acquire()
+            try:
+                app.btn_reboot.command()  # must silently do nothing
+                self.assertEqual(_MockToplevel.all_instances, [])
+            finally:
+                app._busy_lock.release()
+            app.btn_reboot.command()      # idle -> dialog is created
+            self.assertEqual(len(_MockToplevel.all_instances), 1)
+        finally:
+            os.remove(log_path)
+
+    def test_poll_log_survives_widget_failure(self):
+        """One broken render cycle must never kill the pump (the pump
+        reschedules itself even when the widget layer explodes)."""
+        app, log_path = self._make_app()
+        try:
+            before = len(app.root.after_calls)
+
+            def boom(*_a, **_k):
+                raise RuntimeError("widget exploded")
+
+            with mock.patch.object(app.log_text, "delete", boom):
+                app._poll_log()  # must not raise
+            self.assertGreater(len(app.root.after_calls), before)
+        finally:
+            os.remove(log_path)
+
+
 class TestBootHelpers(unittest.TestCase):
     """Degradation contracts for the FixTool boot layer - the UAC /
     elevation / DPI path, which is the most safety-critical boot code in
@@ -929,6 +1184,16 @@ class TestRunnerHardening(unittest.TestCase):
         rc = runner.run_stream(hello, timeout=30, on_line=seen.append)
         self.assertEqual(rc, 0)
         self.assertIn("hello-audit", seen)
+
+    def test_run_stream_propagates_nonzero_exit_code(self):
+        """GUARD (added in round 14): run_stream must faithfully
+        propagate a NON-ZERO exit code. The previous guards only pinned
+        the timeout path (None) and the success path (0) - a mutant
+        swallowing every exit code into 0 survived the whole suite."""
+        runner, _events = self._runner()
+        fail = [sys.executable, "-c", "import sys; sys.exit(3)"]
+        rc = runner.run_stream(fail, timeout=30)
+        self.assertEqual(rc, 3)
 
     def test_rename_dir_survives_same_second_collision(self):
         """Two archives in the same second must not be misreported as a

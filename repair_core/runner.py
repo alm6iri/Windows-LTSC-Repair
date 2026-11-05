@@ -202,25 +202,34 @@ class Runner(object):
         reader = threading.Thread(target=_pump, daemon=True)
         reader.start()
         try:
-            proc.wait(timeout=max(1, timeout))
-        except subprocess.TimeoutExpired:
-            proc.kill()
             try:
-                proc.wait(timeout=10)  # reap the killed process (no zombie,
-            except Exception:          # no ResourceWarning on GC)
-                pass
-            self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
-            return None
-        except OSError as exc:
-            proc.kill()
+                proc.wait(timeout=max(1, timeout))
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=10)  # reap the killed process (no
+                except Exception:          # zombie, no ResourceWarning)
+                    pass
+                self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
+                return None
+            except OSError as exc:
+                proc.kill()
+                try:
+                    proc.wait(timeout=10)
+                except Exception:
+                    pass
+                self.note("cmd_failed", (None, str(exc)), "warn")
+                return None
+            reader.join(timeout=5)
+            return proc.returncode
+        finally:
+            # Explicitly close the pipe: leaving it to the GC emits a
+            # ResourceWarning (caught by the zero-warnings gate) and
+            # leaks a descriptor until collection.
             try:
-                proc.wait(timeout=10)
+                proc.stdout.close()
             except Exception:
                 pass
-            self.note("cmd_failed", (None, str(exc)), "warn")
-            return None
-        reader.join(timeout=5)
-        return proc.returncode
 
     def run_bytes(self, cmd, timeout=3600):
         """Run and capture raw bytes (needed for SFC, whose redirected
