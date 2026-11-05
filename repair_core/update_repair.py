@@ -49,31 +49,35 @@ def _recycle_dir(runner, path):
 
 def repair(runner, info=None):
     root = platform_info.systemroot()
-
-    # -- 1. verified stop of the whole update chain -----------------------
-    runner.note("upd_stopping")
     existing = [s for s in STOP_ORDER if service_exists(s)]
-    for name in existing:
-        runner.stop_service(name, timeout=30)
-    # A second sweep catches services that only stopped after a dependent
-    # released its lock (classic wuauserv/cryptSvc interplay).
-    for name in existing:
-        runner.stop_service(name, timeout=15)
 
-    # -- 2. archive the corrupt databases ----------------------------------
-    _recycle_dir(runner, os.path.join(root, "SoftwareDistribution"))
-    _recycle_dir(runner, os.path.join(root, "System32", "catroot2"))
+    runner.note("upd_stopping")
+    try:
+        # -- 1. verified stop of the whole update chain -------------------
+        for name in existing:
+            runner.stop_service(name, timeout=30)
+        # A second sweep catches services that only stopped after a
+        # dependent released its lock (classic wuauserv/cryptSvc interplay).
+        for name in existing:
+            runner.stop_service(name, timeout=15)
 
-    # -- 3. restore stock start modes ---------------------------------------
-    for name, mode in START_MODES.items():
-        if service_exists(name):
-            runner.set_start_mode(name, mode)
+        # -- 2. archive the corrupt databases -----------------------------
+        _recycle_dir(runner, os.path.join(root, "SoftwareDistribution"))
+        _recycle_dir(runner, os.path.join(root, "System32", "catroot2"))
 
-    # -- 4. restart the chain ------------------------------------------------
-    runner.note("upd_starting")
-    for name in START_ORDER:
-        if service_exists(name):
-            runner.start_service(name)
+        # -- 3. restore stock start modes --------------------------------
+        for name, mode in START_MODES.items():
+            if service_exists(name):
+                runner.set_start_mode(name, mode)
+    finally:
+        # -- 4. restart the chain ----------------------------------------
+        # This must run even when an unexpected error escapes the archive
+        # step: leaving the update stack stopped/disabled would break
+        # Windows Update until the user repairs it manually.
+        runner.note("upd_starting")
+        for name in START_ORDER:
+            if service_exists(name):
+                runner.start_service(name)
 
     runner.note("upd_rebuilt")
     return {"reboot_required": False}

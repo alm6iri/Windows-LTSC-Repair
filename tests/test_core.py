@@ -244,10 +244,17 @@ class TestPlatformInfo(unittest.TestCase):
         self.assertIn("IoT", summary)
         self.assertIn("26100", summary)
 
-    def test_detect_on_non_windows_does_not_crash(self):
+    def test_detect_is_safe_on_any_platform(self):
+        """detect() must never raise, and must report availability that
+        matches the host it actually runs on (the old assertion hard-coded
+        non-Windows behavior, so the suite failed on a real Windows box)."""
         info = platform_info.detect()
-        self.assertFalse(info.available)
-        self.assertIn("non-Windows", info.summary())
+        if platform_info.IS_WINDOWS:
+            self.assertTrue(info.available)
+            self.assertNotIn("non-Windows", info.summary())
+        else:
+            self.assertFalse(info.available)
+            self.assertIn("non-Windows", info.summary())
 
     def test_info_derived_helpers(self):
         info = platform_info.WindowsInfo()
@@ -1143,8 +1150,12 @@ class TestRunnerHardening(unittest.TestCase):
             "        STATE              : 4  RUNNING \r\n"
             "                                (STOPPABLE,NOT_PAUSABLE)\r\n"
         )
+        # Force the fallback: on a real Windows host the SCM API answers
+        # first, so the parser would never be exercised without this patch.
         with mock.patch.object(runner, "run",
-                               return_value=CmdResult(0, sample, "")):
+                               return_value=CmdResult(0, sample, "")), \
+                mock.patch("repair_core.runner._native_service_state",
+                           return_value=None):
             self.assertEqual(runner.service_state("wuauserv"), "RUNNING")
 
     def test_native_service_state_never_raises(self):

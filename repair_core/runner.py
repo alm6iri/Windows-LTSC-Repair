@@ -15,6 +15,7 @@ Design goals:
 
 import ctypes
 import glob
+import locale
 import os
 import re
 import shutil
@@ -27,6 +28,24 @@ import time
 
 # 0x08000000 = CREATE_NO_WINDOW (Windows-only constant)
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _console_encoding():
+    """Code page that Windows console programs write when redirected.
+
+    Using UTF-8 unconditionally turned localized `sc`/`netsh`/`w32tm`
+    output into replacement characters on non-English builds. The OEM code
+    page is what those tools actually emit; other platforms fall back to
+    the process locale."""
+    if os.name == "nt":
+        try:
+            return "cp{0}".format(ctypes.windll.kernel32.GetOEMCP())
+        except Exception:
+            pass
+    try:
+        return locale.getpreferredencoding(False) or "utf-8"
+    except Exception:
+        return "utf-8"
 
 _STATE_RE = re.compile(r"STATE\s*:\s*\d+\s+([A-Z]+)")
 
@@ -62,6 +81,23 @@ def _native_service_state(name):
         SC_MANAGER_CONNECT = 0x0001
         SERVICE_QUERY_STATUS = 0x0004
         SC_STATUS_PROCESS_INFO = 0
+
+        # Explicit HANDLE prototypes: ctypes otherwise assumes a 32-bit
+        # ``int`` return/argument and truncates service handles on 64-bit
+        # Windows, which made every native query fail silently and fell
+        # back to parsing localized `sc` output.
+        advapi32.OpenSCManagerW.restype = ctypes.c_void_p
+        advapi32.OpenSCManagerW.argtypes = [
+            ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+        advapi32.OpenServiceW.restype = ctypes.c_void_p
+        advapi32.OpenServiceW.argtypes = [
+            ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32]
+        advapi32.QueryServiceStatusEx.restype = ctypes.c_int
+        advapi32.QueryServiceStatusEx.argtypes = [
+            ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
+            ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+        advapi32.CloseServiceHandle.restype = ctypes.c_int
+        advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]
 
         manager = advapi32.OpenSCManagerW(None, None, SC_MANAGER_CONNECT)
         if not manager:
@@ -139,17 +175,23 @@ class Runner(object):
         ``input`` pipes stdin (used to answer CHKDSK's Y/N reboot prompt)."""
         if report:
             self._raw(fmt_cmd(cmd), "cmd")
+        kwargs = dict(
+            capture_output=True,
+            text=True,
+            encoding=_console_encoding(),
+            errors="replace",
+            timeout=timeout,
+            creationflags=_NO_WINDOW,
+        )
+        # Never inherit the GUI's stdin: a service prompt would otherwise
+        # block the worker forever (the timeout only fires while waiting
+        # for the process to exit, not while it waits for input).
+        if input is None:
+            kwargs["stdin"] = subprocess.DEVNULL
+        else:
+            kwargs["input"] = input
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout,
-                input=input,
-                creationflags=_NO_WINDOW,
-            )
+            proc = subprocess.run(cmd, **kwargs)
             result = CmdResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired:
             self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
@@ -180,8 +222,9 @@ class Runner(object):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
                 text=True,
-                encoding="utf-8",
+                encoding=_console_encoding(),
                 errors="replace",
                 bufsize=1,
                 creationflags=_NO_WINDOW,
@@ -238,6 +281,7 @@ class Runner(object):
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, timeout=timeout,
+                stdin=subprocess.DEVNULL,
                 creationflags=_NO_WINDOW,
             )
         except subprocess.TimeoutExpired:

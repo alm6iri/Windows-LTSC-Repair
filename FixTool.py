@@ -331,25 +331,52 @@ class WindowsRepairApp(object):
         except Exception:
             pass
         finally:
-            self.root.after(250, self._poll_log)
+            try:
+                self.root.after(250, self._poll_log)
+            except Exception:
+                # Window already destroyed - nothing left to pump.
+                pass
 
     def _refresh(self, force=False):
-        if not force and len(self.log.entries) == self._rendered_count:
-            return
-        self._rendered_count = len(self.log.entries)
-        lines = self.log.render(self.s)
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", "end")
-        for line in lines:
-            self.log_text.insert("end", line + "\n", "align")
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
+        entries = self.log.entries[:]  # snapshot: workers append concurrently
+        if (not force
+                and self.lang == getattr(self, "_rendered_lang", None)
+                and len(entries) >= self._rendered_count):
+            # Append-only fast path: re-inserting the whole history on
+            # every poll is O(n^2) while DISM/CHKDSK stream output.
+            new_entries = entries[self._rendered_count:]
+            if not new_entries:
+                return
+            self._append_log_lines(self.log.render(self.s, new_entries))
+        else:
+            # Language change or explicit refresh: full translated redraw.
+            self._replace_log_lines(self.log.render(self.s, entries))
+
+        self._rendered_count = len(entries)
+        self._rendered_lang = self.lang
         # Throttled disk mirror (max once per 2s) so DISM's streamed
         # output cannot cause a write storm.
         now = time.monotonic()
         if force or now - getattr(self, "_last_save", 0.0) >= 2.0:
             self._last_save = now
             self.log.save(self.s)  # best-effort, never raises
+
+    def _append_log_lines(self, lines):
+        if not lines:
+            return
+        self.log_text.configure(state="normal")
+        for line in lines:
+            self.log_text.insert("end", line + "\n", "align")
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def _replace_log_lines(self, lines):
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        for line in lines:
+            self.log_text.insert("end", line + "\n", "align")
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
 
 
     # ------------------------------------------------------------ operations
@@ -400,7 +427,14 @@ class WindowsRepairApp(object):
         win.geometry("420x190")
         win.resizable(False, False)
         win.attributes("-topmost", True)
-        win.grab_set()
+        try:
+            # A Toplevel that is not viewable yet rejects grab_set() with
+            # TclError on real Tk. Best-effort: the dialog still works
+            # without a grab, so never let this abort the callback.
+            win.update_idletasks()
+            win.grab_set()
+        except Exception:
+            pass
 
         lbl = self.ctk.CTkLabel(
             win, text=s["reboot_msg"],
@@ -411,13 +445,24 @@ class WindowsRepairApp(object):
         frame.pack(pady=10)
 
         def do_reboot():
+            win.destroy()
             try:
-                subprocess.run(["shutdown", "/r", "/t", "0", "/f"],
-                               timeout=15,
-                               creationflags=getattr(
-                                   subprocess, "CREATE_NO_WINDOW", 0))
-            except Exception:
-                pass
+                result = subprocess.run(
+                    ["shutdown", "/r", "/t", "0", "/f"],
+                    capture_output=True, text=True, errors="replace",
+                    timeout=15,
+                    creationflags=getattr(
+                        subprocess, "CREATE_NO_WINDOW", 0))
+            except (OSError, subprocess.SubprocessError) as exc:
+                self.log.add("reboot_failed", (str(exc),), level="warn")
+                return
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip()
+                if detail:
+                    detail = detail.splitlines()[0][:160]
+                else:
+                    detail = "exit code {0}".format(result.returncode)
+                self.log.add("reboot_failed", (detail,), level="warn")
 
         self.ctk.CTkButton(
             frame, text=s["reboot_yes"], fg_color="#E06C75",

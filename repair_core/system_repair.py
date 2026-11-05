@@ -84,7 +84,12 @@ def repair(runner, info=None):
 
     # ---- 2. SFC: repair protected OS files --------------------------------
     runner.note("sfc_start")
-    rc, data = runner.run_bytes(["sfc", "/scannow"], timeout=3600)
+    # Resolve the binary under the real Windows directory first: a broken
+    # PATH (common after the network/core repair) must not disable SFC.
+    sfc = os.path.join(root, "System32", "sfc.exe")
+    if not os.path.isfile(sfc):
+        sfc = "sfc"
+    rc, data = runner.run_bytes([sfc, "/scannow"], timeout=3600)
     output = _decode_sfc(data)
 
     verdict_key = "sfc_unknown"

@@ -92,6 +92,7 @@ STRINGS = {
         "reboot_msg": "لتطبيق الإصلاحات العميقة بنجاح،\nيجب إعادة تشغيل الكمبيوتر الآن.",
         "reboot_yes": "نعم، أعد التشغيل",
         "reboot_no": "إلغاء",
+        "reboot_failed": "تعذر تنفيذ أمر إعادة التشغيل: {0}",
         # ---- fatal errors -------------------------------------------------------------
         "err_admin_title": "صلاحيات غير كافية",
         "err_admin_msg": "تم رفض طلب صلاحيات المسؤول.\nأعد تشغيل الأداة ووافق على نافذة UAC.",
@@ -191,6 +192,7 @@ STRINGS = {
         "reboot_msg": "To apply the deep core fixes successfully,\nthe computer must be restarted now.",
         "reboot_yes": "Yes, Restart Now",
         "reboot_no": "Cancel",
+        "reboot_failed": "Could not run the restart command: {0}",
         # ---- fatal errors -------------------------------------------------------------
         "err_admin_title": "Insufficient privileges",
         "err_admin_msg": "The UAC elevation request was declined.\nRe-run the tool and accept the UAC prompt.",

@@ -31,11 +31,14 @@ class EventLog(object):
             "level": level,
         })
 
-    def render(self, strings):
-        """Render all entries into display lines using a strings table."""
+    def render(self, strings, entries=None):
+        """Render entries into display lines using a strings table.
+
+        ``entries`` defaults to the live history; the GUI passes a
+        snapshot so worker-thread appends can never race the render."""
         from .strings import render as _render  # local import: no cycle risk
         lines = []
-        for entry in self.entries:
+        for entry in (self.entries if entries is None else entries):
             if entry["key"] is not None:
                 text = _render(strings, entry["key"], entry["params"])
             else:
@@ -51,18 +54,29 @@ class EventLog(object):
     def save(self, strings):
         """Write the current history to the log file (snapshot semantics -
         the file always mirrors the live on-screen log). Never raises:
-        logging must not kill a repair."""
+        logging must not kill a repair.
+
+        The write goes to a sibling temp file and is atomically replaced
+        over the real log, so a crash or power loss can never leave a
+        half-written/truncated log behind."""
+        temporary = self.path + ".tmp"
         try:
-            with open(self.path, "w", encoding="utf-8") as handle:
+            with open(temporary, "w", encoding="utf-8") as handle:
                 handle.write(
                     "===== FixTool session {0} =====\n\n".format(
                         time.strftime("%Y-%m-%d %H:%M:%S")
                     )
                 )
-                for line in self.render(strings):
+                for line in self.render(strings, self.entries[:]):
                     handle.write(line + "\n")
+            os.replace(temporary, self.path)
             return True
         except OSError:
+            try:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+            except OSError:
+                pass
             return False
 
 
