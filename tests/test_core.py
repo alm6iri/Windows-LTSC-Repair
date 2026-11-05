@@ -656,6 +656,62 @@ class TestEndToEndIntegration(unittest.TestCase):
         os.remove(log.path)
 
 
+class TestBootHelpers(unittest.TestCase):
+    """Degradation contracts for the FixTool boot layer - the UAC /
+    elevation / DPI path, which is the most safety-critical boot code in
+    the app and previously had zero automated coverage.
+
+    Interactive-behavior tests are SKIPPED ON WINDOWS on purpose: a
+    naive test would pop REAL UAC prompts and message boxes during the
+    test-gated release build. The skip markers are the guard."""
+
+    @classmethod
+    def setUpClass(cls):
+        import FixTool
+        cls.fixtool = FixTool
+
+    def test_is_admin_returns_bool(self):
+        # Contract on BOTH platforms: a bool, never an exception.
+        result = self.fixtool._is_admin()
+        self.assertIsInstance(result, bool)
+        if os.name != "nt":
+            self.assertFalse(result)  # deterministic off-Windows
+
+    def test_enable_dpi_awareness_never_raises(self):
+        # Contract on BOTH platforms: best-effort, always silent.
+        self.fixtool._enable_dpi_awareness()
+
+    @unittest.skipIf(os.name == "nt", "would show a real message box")
+    def test_message_box_is_silent_noop_off_windows(self):
+        # Off-Windows there is no user32: must degrade to a silent no-op.
+        self.fixtool._message_box("text", "caption")
+
+    @unittest.skipIf(os.name == "nt", "would trigger a real UAC prompt")
+    def test_relaunch_elevated_degrades_to_zero_off_windows(self):
+        # No windll off-Windows: must degrade to the failure code (<= 32)
+        # without raising.
+        ret = self.fixtool._relaunch_elevated()
+        self.assertIsInstance(ret, int)
+        self.assertLessEqual(ret, 32)
+
+    @unittest.skipIf(os.name == "nt", "depends on the host's GUI install")
+    def test_try_load_gui_degrades_to_none_off_windows(self):
+        # customtkinter cannot be installed here: must return None
+        # (and the missing-library dialog degrades silently off-Windows).
+        self.assertIsNone(self.fixtool._try_load_gui())
+
+    @unittest.skipIf(os.name == "nt", "main() would launch the real GUI")
+    def test_main_platform_guard_off_windows(self):
+        import io
+        from contextlib import redirect_stderr
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            code = self.fixtool.main()
+        self.assertEqual(code, 1)
+        # The guard message is localized (AR default UI language).
+        self.assertIn("Windows 10/11", buf.getvalue())
+
+
 class TestEventLog(unittest.TestCase):
     def test_render_translates_retroactively(self):
         log = eventlog.EventLog(path=os.path.join(tempfile.gettempdir(),
