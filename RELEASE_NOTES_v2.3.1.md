@@ -43,6 +43,8 @@ The first tagged stable release of the Windows LTSC Repair Toolkit. This release
 - Administrator (UAC elevation) privileges for repair operations
 - SmartScreen may warn on first run for unsigned binaries — verify the SHA-256 checksum published with the release.
 
+**SHA-256:** `4d9c86281149fe173d81be915ceaa45aa3cee73311ea917dc7bc9ff28afbf522`
+
 ---
 
 **Full changelog:** https://github.com/alm6iri/Windows-LTSC-Repair/commits/v2.3.1
