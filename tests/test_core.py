@@ -1068,6 +1068,20 @@ class TestSourceIntegrity(unittest.TestCase):
                     re.search(r"\b%s\b" % re.escape(name), body),
                     "%s imports '%s' but never uses it" % (path, name))
 
+    def test_package_all_matches_actual_modules(self):
+        """repair_core.__all__ must list exactly the package's real
+        modules - a drift (module added but not exported, or stale
+        entry) breaks star-imports and misdocuments the API."""
+        import repair_core
+        core_dir = os.path.join(self.ROOT, "repair_core")
+        actual = {name[:-3] for name in os.listdir(core_dir)
+                  if name.endswith(".py") and name != "__init__.py"}
+        listed = set(repair_core.__all__)
+        self.assertEqual(
+            listed, actual,
+            "__all__ drift - missing: %s / stale: %s"
+            % (actual - listed, listed - actual))
+
 
 if __name__ == "__main__":
     unittest.main()
