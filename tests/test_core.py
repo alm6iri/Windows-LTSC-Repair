@@ -157,6 +157,30 @@ class TestStrings(unittest.TestCase):
                     self.assertIn("<%d>" % i, rendered,
                                   "%s/%s dropped param %d" % (lang, key, i))
 
+    def test_no_dead_localization_keys(self):
+        """REVERSE coverage invariant: every key DEFINED in the tables
+        must actually be referenced as a quoted literal somewhere in the
+        project sources - dead keys accumulate cruft and rot the
+        localization tables with zero symptoms. (The forward direction -
+        every used key exists - is covered by the static scan test.)"""
+        defined = set(strings_mod.STRINGS["AR"])
+        sources = []
+        core_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "repair_core")
+        for name in sorted(os.listdir(core_dir)):
+            if name.endswith(".py"):
+                sources.append(os.path.join(core_dir, name))
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sources.append(os.path.join(root, "FixTool.py"))
+        blob = ""
+        for path in sources:
+            with open(path, encoding="utf-8") as fh:
+                blob += fh.read()
+        dead = [key for key in sorted(defined)
+                if ('"%s"' % key) not in blob and ("'%s'" % key) not in blob]
+        self.assertEqual(dead, [], "dead localization keys: %s" % dead)
+
     def test_render_unknown_key_never_crashes(self):
         self.assertEqual(strings_mod.render(strings_mod.STRINGS["EN"], "nope"), "nope")
 
@@ -342,6 +366,22 @@ class TestUpdateRepair(unittest.TestCase):
         self._run(runner)
         self.assertIn("dir_archive_failed",
                       [n[0] for n in runner.notes])
+
+    def test_service_structures_set_consistent(self):
+        """INVARIANT: STOP_ORDER, START_ORDER and START_MODES must cover
+        the exact same service set - a service added to one structure but
+        not the others would be stopped but never restarted (or
+        configured but never stopped), breaking the repair symmetry."""
+        stop = set(update_repair.STOP_ORDER)
+        start = set(update_repair.START_ORDER)
+        modes = set(update_repair.START_MODES)
+        self.assertGreaterEqual(len(stop), 5)
+        self.assertEqual(stop, start,
+                         "STOP_ORDER vs START_ORDER mismatch: %s"
+                         % (stop ^ start))
+        self.assertEqual(stop, modes,
+                         "STOP_ORDER vs START_MODES mismatch: %s"
+                         % (stop ^ modes))
 
 
 class TestTimeRepair(unittest.TestCase):
@@ -955,6 +995,28 @@ class TestSourceIntegrity(unittest.TestCase):
                             "duplicate method shadows an earlier test: "
                             "%s.%s" % (node.name, item.name))
                         seen.add(item.name)
+
+    def test_no_duplicate_module_level_classes(self):
+        """Duplicate module-level class names silently shadow each other
+        (the same Python hazard as duplicate dict keys) - a whole test
+        class or core class could disappear without any error."""
+        root = self.ROOT
+        targets = [os.path.join(root, "FixTool.py"),
+                   os.path.join(root, "tests", "test_core.py")]
+        core_dir = os.path.join(root, "repair_core")
+        for name in sorted(os.listdir(core_dir)):
+            if name.endswith(".py"):
+                targets.append(os.path.join(core_dir, name))
+        for path in targets:
+            tree = self._parse(path)
+            seen = set()
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef):
+                    self.assertNotIn(
+                        node.name, seen,
+                        "duplicate class shadows an earlier definition "
+                        "in %s: %s" % (path, node.name))
+                    seen.add(node.name)
 
     def test_readme_test_count_is_accurate(self):
         """The README's stated test count must equal the number of test
