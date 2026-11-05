@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Mutation-testing harness (audit round 12).
+"""Mutation-testing harness (audit rounds 12-13).
 
 Empirically proves the guard-net catches the historical defect classes:
 each mutant re-introduces one real defect, the suite MUST fail, then the
 pristine code is restored from an in-memory backup. Nothing is left
-modified on disk."""
+modified on disk.
+
+Run on demand (NOT part of the gated build - it lives outside the
+test*.py discovery pattern):  python3 tests/mutation_audit.py"""
 
 import subprocess
 import sys
@@ -44,6 +47,25 @@ MUTANTS = [
      "repair_core/strings.py",
      '"Could not launch command: {0} \u2014 reason: {1}"',
      '"Could not launch command: {0}"'),
+    ("M7 SFC decoder: NUL-parity gate disabled",
+     "repair_core/system_repair.py",
+     "if nulls / (2 * half) > 0.25:",
+     "if nulls / (2 * half) > 1.01:"),
+    ("M8 rename_dir: collision guard removed",
+     "repair_core/runner.py",
+     '        counter = 0\n'
+     '        while os.path.exists(target):\n'
+     '            counter += 1\n'
+     '            target = "{0}{1}_{2}_{3}".format(path, suffix, stamp, counter)\n',
+     ""),
+    ("M9 run_stream: exit code swallowed (always 0)",
+     "repair_core/runner.py",
+     "        reader.join(timeout=5)\n        return proc.returncode",
+     "        reader.join(timeout=5)\n        return 0"),
+    ("M10 chkdsk /f timeout dropped to 120s (mid-repair kill)",
+     "repair_core/disk_repair.py",
+     'result = runner.run(["chkdsk", drive, "/f"], timeout=3600,',
+     'result = runner.run(["chkdsk", drive, "/f"], timeout=120,'),
 ]
 
 

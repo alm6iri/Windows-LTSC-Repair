@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -31,6 +32,7 @@ class FakeRunner(object):
         self.calls = []
         self.notes = []
         self.raws = []
+        self.timeout_log = []      # (cmd_tuple, timeout) for guard tests
         self._outcomes = outcomes or {}
 
     def note(self, key, params=(), level="info"):
@@ -41,6 +43,7 @@ class FakeRunner(object):
 
     def run(self, cmd, timeout=120, report=True, input=None):
         self.calls.append(("run", tuple(cmd)))
+        self.timeout_log.append((tuple(cmd), timeout))
         outcome = self._outcomes.get(tuple(cmd))
         if outcome is None:
             outcome = (0, "", "")
@@ -479,6 +482,24 @@ class TestDiskRepair(unittest.TestCase):
                                return_value="E:\\Windows"):
             self.assertEqual(disk_repair.system_drive(), "E:")
 
+    def test_offline_fix_never_killed_midrepair(self):
+        """DATA-INTEGRITY GUARD (mutation-validated): the scheduled
+        chkdsk /f call must carry a LONG timeout (>= 3600s). A live
+        filesystem repair that gets killed mid-fix (a 120s timeout
+        would) risks volume corruption - this pins the v2.2.2 fix."""
+        runner = FakeRunner()
+        runner._stream_rc = 2  # dirty volume -> /f scheduled
+        with mock.patch.object(disk_repair.platform_info, "systemroot",
+                               return_value="D:\\Windows"):
+            disk_repair.repair(runner, None)
+        fixes = [timeout for cmd, timeout in runner.timeout_log
+                 if cmd == ("chkdsk", "D:", "/f")]
+        self.assertEqual(len(fixes), 1)
+        self.assertGreaterEqual(
+            fixes[0], 3600,
+            "chkdsk /f timeout %ss can kill a live filesystem repair"
+            % fixes[0])
+
 
 class TestGuiWiring(unittest.TestCase):
     """Integration test: FixTool.py imports only repair_core at module
@@ -794,6 +815,54 @@ class TestEventLog(unittest.TestCase):
             self.assertEqual(
                 os.path.dirname(os.path.abspath(path)),
                 os.path.abspath(desktop))
+
+    def test_concurrent_appends_and_renders_thread_safe(self):
+        """THREAD-SAFETY CONTRACT (documented, now tested): worker
+        threads only append (list.append is atomic under the GIL) while
+        the main thread renders - no exceptions, no lost or corrupted
+        entries. This is the exact access pattern the GUI pump uses."""
+        log = eventlog.EventLog(path=os.path.join(
+            tempfile.gettempdir(), "fixtool_conc.log"))
+        log.add("start_msg")
+        errors = []
+        start = threading.Event()  # barrier: render loop is armed first
+
+        def appender(tag):
+            try:
+                start.wait()  # hold until the main thread is ready
+                for i in range(250):
+                    log.add("net_winsock")
+                    log.add(raw="line-%s-%d" % (tag, i))
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        threads = [threading.Thread(target=appender, args=(t,))
+                   for t in range(4)]
+        for t in threads:
+            t.start()
+        renders = 0
+        try:
+            # do-while shape: render at least once AND keep rendering
+            # while the appenders are alive (true concurrent access).
+            while True:
+                log.render(strings_mod.STRINGS["EN"])
+                renders += 1
+                if not any(t.is_alive() for t in threads):
+                    break
+                if renders == 1:
+                    start.set()  # release the appenders mid-rendering
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertGreater(renders, 0)
+        # Every single append survived: 4 threads x 500 entries + 1.
+        self.assertEqual(len(log.entries), 2001)
+        # The rendered output is complete and well-formed.
+        lines = log.render(strings_mod.STRINGS["EN"])
+        self.assertEqual(len(lines), 2001)
+        self.assertTrue(all(line.startswith("[") for line in lines))
 
 
 class TestRunnerInternals(unittest.TestCase):
