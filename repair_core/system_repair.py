@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """System file & component-store repair (DISM + SFC).
 
 New capability in v2 - works identically on every SKU from LTSC 2015 to
@@ -27,8 +26,7 @@ def _looks_like_mojibake(text):
     if not text:
         return True
     cjk = sum(
-        1 for ch in text
-        if 0x3000 <= ord(ch) <= 0x9FFF or 0xFF00 <= ord(ch) <= 0xFFEF
+        1 for ch in text if 0x3000 <= ord(ch) <= 0x9FFF or 0xFF00 <= ord(ch) <= 0xFFEF
     )
     return cjk / len(text) > 0.10
 
@@ -77,8 +75,7 @@ def repair(runner, info=None):
             runner.note("dism_ok")
         else:
             # Non-fatal: SFC can still repair in-place; report and continue.
-            runner.note("dism_failed",
-                        (rc if rc is not None else "-",), "warn")
+            runner.note("dism_failed", (rc if rc is not None else "-",), "warn")
     else:
         runner.note("dism_missing", (), "warn")
 

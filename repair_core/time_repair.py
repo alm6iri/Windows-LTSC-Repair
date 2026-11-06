@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Time synchronization repair.
 
 v1 shipped a corrupted peer list (`://windows.com` - an invalid host that
@@ -42,11 +41,14 @@ def repair(runner, info=None):
 
     runner.note("time_config")
     runner.run(
-        ["w32tm", "/config",
-         "/manualpeerlist:" + NTP_PEERS,
-         "/syncfromflags:manual",
-         "/reliable:no",
-         "/update"],
+        [
+            "w32tm",
+            "/config",
+            "/manualpeerlist:" + NTP_PEERS,
+            "/syncfromflags:manual",
+            "/reliable:no",
+            "/update",
+        ],
         timeout=60,
     )
 
@@ -64,8 +66,7 @@ def repair(runner, info=None):
     else:
         runner.note("time_resync_failed", (), "warn")
 
-    status = runner.run(["w32tm", "/query", "/status"], timeout=30,
-                        report=False)
+    status = runner.run(["w32tm", "/query", "/status"], timeout=30, report=False)
     if status.ok and status.out:
         for line in status.out.splitlines():
             line = line.strip()

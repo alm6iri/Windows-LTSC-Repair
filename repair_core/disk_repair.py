@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Disk health verification & repair (CHKDSK + SMART) - new in v2.1.
 
 Safety-first design, compatible with every SKU from 1507 to 25H2:
@@ -29,8 +28,14 @@ _PS_SMART = (
 
 def _powershell(runner, script, timeout=120):
     return runner.run(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-         "-Command", script],
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
         timeout=timeout,
     )
 
@@ -63,7 +68,8 @@ def repair(runner, info=None):
     # ---- online verification (safe, no dismount) -------------------------
     runner.note("disk_scan_start")
     rc = runner.run_stream(
-        ["chkdsk", drive, "/scan"], timeout=3600,
+        ["chkdsk", drive, "/scan"],
+        timeout=3600,
         on_line=lambda line: runner.raw("    " + line),
     )
     if rc is None:
@@ -82,11 +88,9 @@ def repair(runner, info=None):
     # Long timeout on purpose: if the volume happens to be lockable,
     # chkdsk /f runs the FULL repair immediately - killing it mid-fix
     # (a 120s timeout would) risks filesystem corruption.
-    result = runner.run(["chkdsk", drive, "/f"], timeout=3600,
-                        input="Y\r\n")
+    result = runner.run(["chkdsk", drive, "/f"], timeout=3600, input="Y\r\n")
     if result.ok:
         runner.note("disk_scheduled", (drive,))
         return {"reboot_required": True}
-    runner.note("disk_failed",
-                (result.rc if result.rc is not None else "-",), "warn")
+    runner.note("disk_failed", (result.rc if result.rc is not None else "-",), "warn")
     return {"reboot_required": False}

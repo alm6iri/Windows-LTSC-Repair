@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Platform / edition detection for every Windows 10 and Windows 11 SKU.
 
 Covers: Home, Pro, Pro for Workstations, Enterprise, Education, all LTSC
@@ -13,7 +12,7 @@ Everything degrades gracefully: on non-Windows systems (dev/CI sandboxes)
 import os
 import shutil
 
-IS_WINDOWS = (os.name == "nt")
+IS_WINDOWS = os.name == "nt"
 
 try:
     import winreg
@@ -26,27 +25,45 @@ except ImportError:  # non-Windows dev / CI environments
 # ---------------------------------------------------------------------------
 
 _WIN10_RELEASES = {
-    10240: "1507", 10586: "1511", 14393: "1607", 15063: "1703",
-    16299: "1709", 17134: "1803", 17763: "1809", 18362: "1903",
-    18363: "1909", 19041: "2004", 19042: "20H2", 19043: "21H1",
-    19044: "21H2", 19045: "22H2",
+    10240: "1507",
+    10586: "1511",
+    14393: "1607",
+    15063: "1703",
+    16299: "1709",
+    17134: "1803",
+    17763: "1809",
+    18362: "1903",
+    18363: "1909",
+    19041: "2004",
+    19042: "20H2",
+    19043: "21H1",
+    19044: "21H2",
+    19045: "22H2",
 }
 
 _WIN11_RELEASES = {
-    22000: "21H2", 22621: "22H2", 22631: "23H2", 26100: "24H2",
+    22000: "21H2",
+    22621: "22H2",
+    22631: "23H2",
+    26100: "24H2",
     26200: "25H2",
 }
 
 # Editions that ship as LTSC (Long-Term Servicing Channel).
 LTSC_EDITION_IDS = {
-    "EnterpriseS", "EnterpriseSN",           # LTSC 2015..2024 (+N)
-    "IoTEnterpriseS", "IoTEnterpriseSN",     # IoT Enterprise LTSC 2021/2024
+    "EnterpriseS",
+    "EnterpriseSN",  # LTSC 2015..2024 (+N)
+    "IoTEnterpriseS",
+    "IoTEnterpriseSN",  # IoT Enterprise LTSC 2021/2024
 }
 
 # IoT Enterprise family (value-add of IoT LTSC + regular IoT Enterprise).
 IOT_EDITION_IDS = {
-    "IoTEnterprise", "IoTEnterpriseS",
-    "IoTEnterpriseSN", "IoTEnterpriseK", "IoTEnterpriseSK",
+    "IoTEnterprise",
+    "IoTEnterpriseS",
+    "IoTEnterpriseSN",
+    "IoTEnterpriseK",
+    "IoTEnterpriseSK",
 }
 
 _CV_PATH = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
@@ -67,18 +84,18 @@ def release_from_build(build, is_win11):
     return table.get(build, "Unknown")
 
 
-class WindowsInfo(object):
+class WindowsInfo:
     """Snapshot of the running Windows SKU."""
 
     def __init__(self):
-        self.available = False        # True only on a real Windows host
-        self.product_name = ""        # e.g. "Windows 10 Enterprise LTSC 2021"
-        self.edition_id = ""          # e.g. "EnterpriseS", "Core", "Professional"
-        self.display_version = ""     # "21H2" / "24H2" (20H2+ / Win11)
-        self.release_id = ""          # legacy field (1507 .. 21H2 only)
+        self.available = False  # True only on a real Windows host
+        self.product_name = ""  # e.g. "Windows 10 Enterprise LTSC 2021"
+        self.edition_id = ""  # e.g. "EnterpriseS", "Core", "Professional"
+        self.display_version = ""  # "21H2" / "24H2" (20H2+ / Win11)
+        self.release_id = ""  # legacy field (1507 .. 21H2 only)
         self.build = 0
-        self.ubr = 0                  # Update Build Revision
-        self.installation_type = ""   # "Client" / "Server"
+        self.ubr = 0  # Update Build Revision
+        self.installation_type = ""  # "Client" / "Server"
         self.is_win11 = False
         self.is_ltsc = False
         self.is_iot = False
@@ -93,7 +110,7 @@ class WindowsInfo(object):
 
     @property
     def build_full(self):
-        return "{0}.{1}".format(self.build, self.ubr) if self.ubr else str(self.build)
+        return f"{self.build}.{self.ubr}" if self.ubr else str(self.build)
 
     @property
     def release(self):
@@ -111,11 +128,13 @@ class WindowsInfo(object):
         if not self.available:
             return "non-Windows host (development mode)"
         line = " ".join(
-            b for b in (
-                "Windows {0}".format(self.major),
+            b
+            for b in (
+                f"Windows {self.major}",
                 self.edition_id or "",
                 self.release,
-            ) if b
+            )
+            if b
         )
         tags = []
         if self.is_ltsc:
@@ -126,14 +145,15 @@ class WindowsInfo(object):
             tags.append("Server")
         if tags:
             line += " [" + "/".join(tags) + "]"
-        return "{0} - Build {1}".format(line, self.build_full) + (
-            " ({0})".format(self.arch) if self.arch else ""
+        return f"{line} - Build {self.build_full}" + (
+            f" ({self.arch})" if self.arch else ""
         )
 
 
 # ---------------------------------------------------------------------------
 # Registry helpers
 # ---------------------------------------------------------------------------
+
 
 def _reg_read(name, path=_CV_PATH):
     """Read a string value from the Windows NT CurrentVersion key.
@@ -160,6 +180,7 @@ def _reg_read_int(name, path=_CV_PATH):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def detect():
     """Detect the running Windows SKU. Safe on every platform."""
     info = WindowsInfo()
@@ -177,8 +198,7 @@ def detect():
 
     info.is_win11 = info.build >= 22000
     info.is_ltsc = (
-        info.edition_id in LTSC_EDITION_IDS
-        or "LTSC" in info.product_name.upper()
+        info.edition_id in LTSC_EDITION_IDS or "LTSC" in info.product_name.upper()
     )
     info.is_iot = info.edition_id in IOT_EDITION_IDS
     info.is_server = (
@@ -198,7 +218,7 @@ def service_exists(name):
     try:
         with winreg.OpenKey(
             winreg.HKEY_LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Services\{}".format(name),
+            rf"SYSTEM\CurrentControlSet\Services\{name}",
         ):
             return True
     except OSError:
@@ -224,4 +244,3 @@ def systemroot():
     if not root or not os.path.isdir(root):
         root = r"C:\Windows"
     return root
-

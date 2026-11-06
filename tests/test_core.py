@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unit tests for the repair_core engine.
 
 Runs on ANY OS (Linux CI included): Windows specifics are mocked, so the
@@ -19,20 +18,27 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from repair_core import (network_repair, update_repair, time_repair,
-                         system_repair, disk_repair, platform_info,
-                         strings as strings_mod, eventlog)
+from repair_core import (
+    disk_repair,
+    eventlog,
+    network_repair,
+    platform_info,
+    system_repair,
+    time_repair,
+    update_repair,
+)
+from repair_core import strings as strings_mod
 from repair_core.runner import CmdResult, Runner, fmt_cmd
 
 
-class FakeRunner(object):
+class FakeRunner:
     """Records every call the repair modules make - no real commands run."""
 
     def __init__(self, outcomes=None):
         self.calls = []
         self.notes = []
         self.raws = []
-        self.timeout_log = []      # (cmd_tuple, timeout) for guard tests
+        self.timeout_log = []  # (cmd_tuple, timeout) for guard tests
         self._outcomes = outcomes or {}
 
     def note(self, key, params=(), level="info"):
@@ -55,7 +61,9 @@ class FakeRunner(object):
 
     def run_bytes(self, cmd, timeout=3600):
         self.calls.append(("run_bytes", tuple(cmd)))
-        return 0, b"\xff\xfe" + "did not find any integrity violations".encode("utf-16-le")
+        return 0, b"\xff\xfe" + "did not find any integrity violations".encode(
+            "utf-16-le"
+        )
 
     def service_state(self, name):
         return "RUNNING"
@@ -96,12 +104,12 @@ class TestStrings(unittest.TestCase):
     def test_ar_en_key_symmetry(self):
         ar = set(strings_mod.STRINGS["AR"])
         en = set(strings_mod.STRINGS["EN"])
-        self.assertEqual(ar, en, "missing translations: %s / %s"
-                         % (ar - en, en - ar))
+        self.assertEqual(ar, en, f"missing translations: {ar - en} / {en - ar}")
 
     def test_render_placeholders(self):
-        out = strings_mod.render(strings_mod.STRINGS["EN"],
-                                 "cmd_failed", (5, "sc start x"))
+        out = strings_mod.render(
+            strings_mod.STRINGS["EN"], "cmd_failed", (5, "sc start x")
+        )
         self.assertIn("5", out)
         self.assertIn("sc start x", out)
 
@@ -109,8 +117,9 @@ class TestStrings(unittest.TestCase):
         """REGRESSION (v2.2.2): the runner passes (cmd, os_reason) but the
         old template had only {0}, silently swallowing the OS error text."""
         for lang in ("AR", "EN"):
-            out = strings_mod.render(strings_mod.STRINGS[lang],
-                                     "cmd_missing", ("wmic", "No such file"))
+            out = strings_mod.render(
+                strings_mod.STRINGS[lang], "cmd_missing", ("wmic", "No such file")
+            )
             self.assertIn("wmic", out)
             self.assertIn("No such file", out)
 
@@ -119,14 +128,14 @@ class TestStrings(unittest.TestCase):
         contiguous 0..max range - a gap like {0},{2} means a param is
         silently never rendered."""
         import re as _re
+
         for lang, table in strings_mod.STRINGS.items():
             for key, template in table.items():
-                indices = sorted(set(
-                    int(m) for m in _re.findall(r"\{(\d+)\}", template)))
+                indices = sorted({int(m) for m in _re.findall(r"\{(\d+)\}", template)})
                 expected = list(range(max(indices) + 1)) if indices else []
                 self.assertEqual(
-                    indices, expected,
-                    "%s/%s has non-contiguous placeholders" % (lang, key))
+                    indices, expected, f"{lang}/{key} has non-contiguous placeholders"
+                )
 
     def test_placeholder_arity_matches_across_languages(self):
         """The same key must consume the same number of params in AR and
@@ -141,24 +150,28 @@ class TestStrings(unittest.TestCase):
             self.assertEqual(
                 arity(ar_template),
                 arity(strings_mod.STRINGS["EN"][key]),
-                "placeholder arity mismatch for key: %s" % key)
+                f"placeholder arity mismatch for key: {key}",
+            )
 
     def test_every_arity_renders_all_params(self):
         """Rendering each template with its implied arity must surface
         every parameter value (catches format-vs-template drift)."""
         import re as _re
+
         for lang, table in strings_mod.STRINGS.items():
             for key, template in table.items():
-                indices = [int(m) for m in _re.findall(
-                    r"\{(\d+)\}", template)]
+                indices = [int(m) for m in _re.findall(r"\{(\d+)\}", template)]
                 if not indices:
                     continue
                 count = max(indices) + 1
-                params = tuple("<%d>" % i for i in range(count))
+                params = tuple("<%d>" % i for i in range(count))  # noqa: UP031
                 rendered = strings_mod.render(table, key, params)
                 for i in range(count):
-                    self.assertIn("<%d>" % i, rendered,
-                                  "%s/%s dropped param %d" % (lang, key, i))
+                    self.assertIn(
+                        "<%d>" % i,  # noqa: UP031
+                        rendered,
+                        "%s/%s dropped param %d" % (lang, key, i),  # noqa: UP031
+                    )
 
     def test_no_dead_localization_keys(self):
         """REVERSE coverage invariant: every key DEFINED in the tables
@@ -169,8 +182,8 @@ class TestStrings(unittest.TestCase):
         defined = set(strings_mod.STRINGS["AR"])
         sources = []
         core_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "repair_core")
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "repair_core"
+        )
         for name in sorted(os.listdir(core_dir)):
             if name.endswith(".py"):
                 sources.append(os.path.join(core_dir, name))
@@ -180,9 +193,12 @@ class TestStrings(unittest.TestCase):
         for path in sources:
             with open(path, encoding="utf-8") as fh:
                 blob += fh.read()
-        dead = [key for key in sorted(defined)
-                if ('"%s"' % key) not in blob and ("'%s'" % key) not in blob]
-        self.assertEqual(dead, [], "dead localization keys: %s" % dead)
+        dead = [
+            key
+            for key in sorted(defined)
+            if (f'"{key}"') not in blob and (f"'{key}'") not in blob
+        ]
+        self.assertEqual(dead, [], f"dead localization keys: {dead}")
 
     def test_render_unknown_key_never_crashes(self):
         self.assertEqual(strings_mod.render(strings_mod.STRINGS["EN"], "nope"), "nope")
@@ -192,6 +208,7 @@ class TestStrings(unittest.TestCase):
         passed to Runner.note(...) / EventLog.add(...) and require an AR
         and EN entry for each - a missing translation can never ship."""
         import re
+
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         used = set()
         core_dir = os.path.join(root, "repair_core")
@@ -209,8 +226,9 @@ class TestStrings(unittest.TestCase):
         self.assertGreater(len(used), 30)  # sanity: the scan found real keys
         for lang in ("AR", "EN"):
             missing = used - set(strings_mod.STRINGS[lang])
-            self.assertEqual(missing, set(),
-                             "keys missing %s translations: %s" % (lang, missing))
+            self.assertEqual(
+                missing, set(), f"keys missing {lang} translations: {missing}"
+            )
 
 
 class TestPlatformInfo(unittest.TestCase):
@@ -276,13 +294,10 @@ class TestPlatformInfo(unittest.TestCase):
             self.assertFalse(result)
 
     def test_for_lang_fallback(self):
-        self.assertIs(strings_mod.for_lang("AR"),
-                      strings_mod.STRINGS["AR"])
-        self.assertIs(strings_mod.for_lang("EN"),
-                      strings_mod.STRINGS["EN"])
+        self.assertIs(strings_mod.for_lang("AR"), strings_mod.STRINGS["AR"])
+        self.assertIs(strings_mod.for_lang("EN"), strings_mod.STRINGS["EN"])
         # Unknown language codes must fall back to EN, never crash.
-        self.assertIs(strings_mod.for_lang("XX"),
-                      strings_mod.STRINGS["EN"])
+        self.assertIs(strings_mod.for_lang("XX"), strings_mod.STRINGS["EN"])
 
 
 class TestNetworkRepair(unittest.TestCase):
@@ -291,8 +306,7 @@ class TestNetworkRepair(unittest.TestCase):
         the Administrators group - a privilege-escalation misconfiguration.
         This test makes sure it can never come back."""
         runner = FakeRunner()
-        with mock.patch.object(network_repair, "service_exists",
-                               return_value=True):
+        with mock.patch.object(network_repair, "service_exists", return_value=True):
             network_repair.repair(runner, None)
         blob = runner.all_text().lower()
         self.assertNotIn("localgroup", blob)
@@ -300,8 +314,7 @@ class TestNetworkRepair(unittest.TestCase):
 
     def test_core_resets_and_adapter_enable_via_powershell(self):
         runner = FakeRunner()
-        with mock.patch.object(network_repair, "service_exists",
-                               return_value=True):
+        with mock.patch.object(network_repair, "service_exists", return_value=True):
             result = network_repair.repair(runner, None)
         blob = runner.all_text()
         self.assertIn("netsh", blob)
@@ -315,23 +328,28 @@ class TestNetworkRepair(unittest.TestCase):
     def test_missing_services_are_skipped_not_blindly_configured(self):
         runner = FakeRunner()
         existing = {"NlaSvc", "Dhcp", "nsi"}  # LTSC-like service set
-        with mock.patch.object(network_repair, "service_exists",
-                               side_effect=lambda n: n in existing):
+        with mock.patch.object(
+            network_repair, "service_exists", side_effect=lambda n: n in existing
+        ):
             network_repair.repair(runner, None)
         configured = {c[1] for c in runner.calls if c[0] == "config"}
         self.assertEqual(configured, existing)
         skipped = [n[1][0] for n in runner.notes if n[0] == "service_missing"]
-        self.assertIn("CDPSvc", skipped)   # absent on LTSC
+        self.assertIn("CDPSvc", skipped)  # absent on LTSC
         self.assertIn("WlanSvc", skipped)
 
     def test_appx_skipped_when_package_absent(self):
         runner = FakeRunner()
-        probe = ("powershell.exe", "-NoProfile", "-ExecutionPolicy",
-                 "Bypass", "-Command",
-                 network_repair._PS_APPX_PROBE)
+        probe = (
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            network_repair._PS_APPX_PROBE,
+        )
         runner._outcomes[probe] = (0, "none", "")
-        with mock.patch.object(network_repair, "service_exists",
-                               return_value=True):
+        with mock.patch.object(network_repair, "service_exists", return_value=True):
             network_repair.repair(runner, None)
         self.assertIn("appx_skip", [n[0] for n in runner.notes])
 
@@ -339,11 +357,15 @@ class TestNetworkRepair(unittest.TestCase):
 class TestUpdateRepair(unittest.TestCase):
     def _run(self, runner):
         services = {"wuauserv", "cryptSvc", "bits", "msiserver", "doSvc"}
-        with mock.patch.object(update_repair, "service_exists",
-                               side_effect=lambda n: n in services), \
-             mock.patch("os.path.isdir", return_value=True), \
-             mock.patch.object(update_repair.platform_info, "systemroot",
-                               return_value="X:\\Windows"):
+        with (
+            mock.patch.object(
+                update_repair, "service_exists", side_effect=lambda n: n in services
+            ),
+            mock.patch("os.path.isdir", return_value=True),
+            mock.patch.object(
+                update_repair.platform_info, "systemroot", return_value="X:\\Windows"
+            ),
+        ):
             return update_repair.repair(runner, None)
 
     def test_stop_archive_rebuild_flow(self):
@@ -351,16 +373,30 @@ class TestUpdateRepair(unittest.TestCase):
         result = self._run(runner)
 
         stopped = [c[1] for c in runner.calls if c[0] == "stop"]
-        self.assertEqual(stopped, ["wuauserv", "cryptSvc", "bits",
-                                   "msiserver", "doSvc",
-                                   # second verified sweep:
-                                   "wuauserv", "cryptSvc", "bits",
-                                   "msiserver", "doSvc"])
+        self.assertEqual(
+            stopped,
+            [
+                "wuauserv",
+                "cryptSvc",
+                "bits",
+                "msiserver",
+                "doSvc",
+                # second verified sweep:
+                "wuauserv",
+                "cryptSvc",
+                "bits",
+                "msiserver",
+                "doSvc",
+            ],
+        )
         renamed = [c[1] for c in runner.calls if c[0] == "rename"]
         self.assertEqual(
             renamed,
-            [os.path.join("X:\\Windows", "SoftwareDistribution"),
-             os.path.join("X:\\Windows", "System32", "catroot2")])
+            [
+                os.path.join("X:\\Windows", "SoftwareDistribution"),
+                os.path.join("X:\\Windows", "System32", "catroot2"),
+            ],
+        )
         # Never a hard delete of the live folders (rd /s /q is gone).
         deleted = [c[1] for c in runner.calls if c[0] == "delete"]
         self.assertEqual(deleted, [])
@@ -374,8 +410,7 @@ class TestUpdateRepair(unittest.TestCase):
         runner = FakeRunner()
         runner.rename_dir = lambda path, suffix=".bak": None  # locked
         self._run(runner)
-        self.assertIn("dir_archive_failed",
-                      [n[0] for n in runner.notes])
+        self.assertIn("dir_archive_failed", [n[0] for n in runner.notes])
 
     def test_service_structures_set_consistent(self):
         """INVARIANT: STOP_ORDER, START_ORDER and START_MODES must cover
@@ -386,20 +421,19 @@ class TestUpdateRepair(unittest.TestCase):
         start = set(update_repair.START_ORDER)
         modes = set(update_repair.START_MODES)
         self.assertGreaterEqual(len(stop), 5)
-        self.assertEqual(stop, start,
-                         "STOP_ORDER vs START_ORDER mismatch: %s"
-                         % (stop ^ start))
-        self.assertEqual(stop, modes,
-                         "STOP_ORDER vs START_MODES mismatch: %s"
-                         % (stop ^ modes))
+        self.assertEqual(
+            stop, start, "STOP_ORDER vs START_ORDER mismatch: %s" % (stop ^ start)
+        )
+        self.assertEqual(
+            stop, modes, "STOP_ORDER vs START_MODES mismatch: %s" % (stop ^ modes)
+        )
 
 
 class TestTimeRepair(unittest.TestCase):
     def test_peer_list_is_valid(self):
         """REGRESSION: v1 shipped the corrupted peer `://windows.com`."""
         runner = FakeRunner()
-        with mock.patch.object(time_repair, "service_exists",
-                               return_value=True):
+        with mock.patch.object(time_repair, "service_exists", return_value=True):
             time_repair.repair(runner, None)
         blob = runner.all_text()
         self.assertNotIn("://windows.com", blob)
@@ -419,49 +453,52 @@ class TestTimeRepair(unittest.TestCase):
         kept the assertion green). The guard now asserts that NO config
         call exists before /register at all."""
         runner = FakeRunner()
-        with mock.patch.object(time_repair, "service_exists",
-                               return_value=True), \
-                mock.patch.object(time_repair.time, "sleep", lambda s: None):
+        with (
+            mock.patch.object(time_repair, "service_exists", return_value=True),
+            mock.patch.object(time_repair.time, "sleep", lambda s: None),
+        ):
             time_repair.repair(runner, None)
         register_idx = None
         config_indices = []
         for i, call in enumerate(runner.calls):
-            if call[0] == "run" and call[1][:2] == ("w32tm", "/register"):
+            if call[0] == "run" and call[1][:2] == ("w32tm", "/register"):  # noqa: SIM102
                 if register_idx is None:
                     register_idx = i
             if call[0] == "config" and call[1] == "w32time":
                 config_indices.append(i)
         self.assertIsNotNone(register_idx)
-        self.assertTrue(config_indices,
-                        "no w32time start-mode configuration at all")
+        self.assertTrue(config_indices, "no w32time start-mode configuration at all")
         early = [i for i in config_indices if i < register_idx]
         self.assertEqual(
-            early, [],
-            "w32time was configured BEFORE w32tm /register (indices %s) "
-            "- /unregister will wipe it" % early)
-        modes = {c[2] for c in runner.calls
-                 if c[0] == "config" and c[1] == "w32time"}
+            early,
+            [],
+            f"w32time was configured BEFORE w32tm /register (indices {early}) "
+            "- /unregister will wipe it",
+        )
+        modes = {c[2] for c in runner.calls if c[0] == "config" and c[1] == "w32time"}
         self.assertEqual(modes, {"auto"})
 
     def test_resync_retries_then_reports_failure(self):
         runner = FakeRunner()
         resync = ("w32tm", "/resync", "/force")
         runner._outcomes[resync] = (1, "", "Access denied")
-        with mock.patch.object(time_repair, "service_exists",
-                               return_value=True), \
-             mock.patch.object(time_repair.time, "sleep", lambda s: None):
+        with (
+            mock.patch.object(time_repair, "service_exists", return_value=True),
+            mock.patch.object(time_repair.time, "sleep", lambda s: None),
+        ):
             time_repair.repair(runner, None)
-        resync_count = sum(1 for c in runner.calls
-                           if c[0] == "run" and c[1] == resync)
+        resync_count = sum(1 for c in runner.calls if c[0] == "run" and c[1] == resync)
         self.assertEqual(resync_count, 3)
-        self.assertIn("time_resync_failed",
-                      [n[0] for n in runner.notes if n[2] == "warn"])
+        self.assertIn(
+            "time_resync_failed", [n[0] for n in runner.notes if n[2] == "warn"]
+        )
 
 
 class TestDiskRepair(unittest.TestCase):
     def _run(self, runner):
-        with mock.patch.object(disk_repair.platform_info, "systemroot",
-                               return_value="D:\\Windows"):
+        with mock.patch.object(
+            disk_repair.platform_info, "systemroot", return_value="D:\\Windows"
+        ):
             return disk_repair.repair(runner, None)
 
     def test_healthy_volume_never_schedules_offline_fix(self):
@@ -471,7 +508,7 @@ class TestDiskRepair(unittest.TestCase):
         blob = runner.all_text()
         self.assertIn("chkdsk", blob)
         self.assertIn("/scan", blob)
-        self.assertNotIn("/f", blob)          # no destructive step online
+        self.assertNotIn("/f", blob)  # no destructive step online
         self.assertIn("disk_ok", [n[0] for n in runner.notes])
         self.assertFalse(result["reboot_required"])
 
@@ -479,16 +516,23 @@ class TestDiskRepair(unittest.TestCase):
         runner = FakeRunner()
         runner._stream_rc = 2  # errors found, not fixed online
         result = self._run(runner)
-        fixed = [c for c in runner.calls
-                 if c[0] == "run" and c[1] == ("chkdsk", "D:", "/f")]
+        fixed = [
+            c for c in runner.calls if c[0] == "run" and c[1] == ("chkdsk", "D:", "/f")
+        ]
         self.assertEqual(len(fixed), 1)
         self.assertIn("disk_scheduled", [n[0] for n in runner.notes])
         self.assertTrue(result["reboot_required"])
 
     def test_smart_unavailable_degrades_to_warning(self):
         runner = FakeRunner()
-        smart = ("powershell.exe", "-NoProfile", "-ExecutionPolicy",
-                 "Bypass", "-Command", disk_repair._PS_SMART)
+        smart = (
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            disk_repair._PS_SMART,
+        )
         runner._outcomes[smart] = (1, "", "cmdlet not found")
         runner._stream_rc = 0
         self._run(runner)
@@ -497,8 +541,9 @@ class TestDiskRepair(unittest.TestCase):
         self.assertIn("disk_ok", [n[0] for n in runner.notes])
 
     def test_system_drive_derived_from_systemroot(self):
-        with mock.patch.object(disk_repair.platform_info, "systemroot",
-                               return_value="E:\\Windows"):
+        with mock.patch.object(
+            disk_repair.platform_info, "systemroot", return_value="E:\\Windows"
+        ):
             self.assertEqual(disk_repair.system_drive(), "E:")
 
     def test_offline_fix_never_killed_midrepair(self):
@@ -508,16 +553,21 @@ class TestDiskRepair(unittest.TestCase):
         would) risks volume corruption - this pins the v2.2.2 fix."""
         runner = FakeRunner()
         runner._stream_rc = 2  # dirty volume -> /f scheduled
-        with mock.patch.object(disk_repair.platform_info, "systemroot",
-                               return_value="D:\\Windows"):
+        with mock.patch.object(
+            disk_repair.platform_info, "systemroot", return_value="D:\\Windows"
+        ):
             disk_repair.repair(runner, None)
-        fixes = [timeout for cmd, timeout in runner.timeout_log
-                 if cmd == ("chkdsk", "D:", "/f")]
+        fixes = [
+            timeout
+            for cmd, timeout in runner.timeout_log
+            if cmd == ("chkdsk", "D:", "/f")
+        ]
         self.assertEqual(len(fixes), 1)
         self.assertGreaterEqual(
-            fixes[0], 3600,
-            "chkdsk /f timeout %ss can kill a live filesystem repair"
-            % fixes[0])
+            fixes[0],
+            3600,
+            f"chkdsk /f timeout {fixes[0]}s can kill a live filesystem repair",
+        )
 
 
 class TestGuiWiring(unittest.TestCase):
@@ -527,7 +577,8 @@ class TestGuiWiring(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import FixTool  # noqa: F401  (safe: no ctk/tk import at top level)
+        import FixTool
+
         cls.fixtool = FixTool
 
     def test_every_operation_has_translations(self):
@@ -536,18 +587,17 @@ class TestGuiWiring(unittest.TestCase):
         for op_id, (module, start_key, end_key) in ops.items():
             for lang in ("AR", "EN"):
                 table = strings_mod.STRINGS[lang]
-                self.assertIn(start_key, table,
-                              "%s missing %s in %s" % (op_id, start_key, lang))
-                self.assertIn(end_key, table,
-                              "%s missing %s in %s" % (op_id, end_key, lang))
+                self.assertIn(
+                    start_key, table, f"{op_id} missing {start_key} in {lang}"
+                )
+                self.assertIn(end_key, table, f"{op_id} missing {end_key} in {lang}")
 
     def test_operations_reference_real_modules(self):
-        import repair_core
-        for _op_id, (module, _s, _e) in \
-                self.fixtool.WindowsRepairApp.OPERATIONS.items():
+        for module, _s, _e in self.fixtool.WindowsRepairApp.OPERATIONS.values():
             self.assertTrue(
                 module.__name__.startswith("repair_core."),
-                "operation module outside repair_core: %s" % module.__name__)
+                f"operation module outside repair_core: {module.__name__}",
+            )
             self.assertTrue(hasattr(module, "repair"))
 
 
@@ -557,30 +607,37 @@ class TestReleaseHygiene(unittest.TestCase):
 
     def test_version_consistency_across_project(self):
         from repair_core import __version__
+
         # SemVer-shaped single source of truth.
         self.assertRegex(__version__, r"^\d+\.\d+\.\d+$")
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         # The Win32 manifest must carry the same version (x.0 suffix).
-        with open(os.path.join(root, "packaging", "app.manifest"),
-                  encoding="utf-8") as fh:
+        with open(
+            os.path.join(root, "packaging", "app.manifest"), encoding="utf-8"
+        ) as fh:
             manifest = fh.read()
-        self.assertIn('version="{0}.0"'.format(__version__), manifest)
+        self.assertIn(f'version="{__version__}.0"', manifest)
 
     def test_release_assets_present(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for rel in ("FixTool.py", "app_icon.ico",
-                    "Windows-LTSC-Repair.spec",
-                    "packaging/app.manifest",
-                    "packaging/build_windows.bat",
-                    "requirements.txt", "README.md"):
+        for rel in (
+            "FixTool.py",
+            "app_icon.ico",
+            "Windows-LTSC-Repair.spec",
+            "packaging/app.manifest",
+            "packaging/build_windows.bat",
+            "requirements.txt",
+            "README.md",
+        ):
             self.assertTrue(
-                os.path.isfile(os.path.join(root, rel)),
-                "missing release asset: %s" % rel)
+                os.path.isfile(os.path.join(root, rel)), f"missing release asset: {rel}"
+            )
 
     def test_spec_pins_icon_and_uac(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "Windows-LTSC-Repair.spec"),
-                  encoding="utf-8") as fh:
+        with open(
+            os.path.join(root, "Windows-LTSC-Repair.spec"), encoding="utf-8"
+        ) as fh:
             spec = fh.read()
         self.assertIn("uac_admin=True", spec)
         self.assertIn("console=False", spec)
@@ -592,8 +649,9 @@ class TestReleaseHygiene(unittest.TestCase):
         the app's documented runtime choice (Tk 8.6 cannot handle
         WM_DPICHANGED; PMv2 would leave windows unscaled)."""
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "packaging", "app.manifest"),
-                  encoding="utf-8") as fh:
+        with open(
+            os.path.join(root, "packaging", "app.manifest"), encoding="utf-8"
+        ) as fh:
             manifest = fh.read()
         self.assertIn("<dpiAware", manifest)
         self.assertIn("true</dpiAware>", manifest)
@@ -606,18 +664,21 @@ class TestReleaseHygiene(unittest.TestCase):
         broken or misdocumented release silently."""
         exe = "Windows-LTSC-Repair"
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "Windows-LTSC-Repair.spec"),
-                  encoding="utf-8") as fh:
+        with open(
+            os.path.join(root, "Windows-LTSC-Repair.spec"), encoding="utf-8"
+        ) as fh:
             spec = fh.read()
-        self.assertIn('name="%s"' % exe, spec)
-        with open(os.path.join(root, "packaging", "build_windows.bat"),
-                  encoding="utf-8", errors="replace") as fh:
+        self.assertIn(f'name="{exe}"', spec)
+        with open(
+            os.path.join(root, "packaging", "build_windows.bat"),
+            encoding="utf-8",
+            errors="replace",
+        ) as fh:
             bat = fh.read()
-        self.assertIn("dist\\%s.exe" % exe, bat)
-        with open(os.path.join(root, "README.md"),
-                  encoding="utf-8") as fh:
+        self.assertIn(f"dist\\{exe}.exe", bat)
+        with open(os.path.join(root, "README.md"), encoding="utf-8") as fh:
             readme = fh.read()
-        self.assertIn("dist\\%s.exe" % exe, readme)
+        self.assertIn(f"dist\\{exe}.exe", readme)
 
 
 class TestEndToEndIntegration(unittest.TestCase):
@@ -640,8 +701,7 @@ class TestEndToEndIntegration(unittest.TestCase):
 
             def run_bytes(self, cmd, timeout=3600):
                 self._raw(fmt_cmd(cmd), "cmd")
-                return 0, ("did not find any integrity violations"
-                           .encode("utf-16-le"))
+                return 0, ("did not find any integrity violations".encode("utf-16-le"))
 
             def stop_service(self, name, timeout=30):
                 return True
@@ -663,29 +723,33 @@ class TestEndToEndIntegration(unittest.TestCase):
 
         return PipelineRunner(log.add)
 
-    SCENARIOS = [
+    SCENARIOS = [  # noqa: RUF012
         # (tag, module, stream exit code, expected reboot_required)
         # The stream code maps to chkdsk /scan for disk scenarios and to
         # DISM for the system-files scenario; SFC output is fed as real
         # UTF-16LE bytes through run_bytes.
-        ("net", network_repair, 0, True),       # winsock/ip resets
+        ("net", network_repair, 0, True),  # winsock/ip resets
         ("upd", update_repair, 0, False),
         ("time", time_repair, 0, False),
-        ("sys", system_repair, 0, False),       # SFC verdict: no violations
+        ("sys", system_repair, 0, False),  # SFC verdict: no violations
         ("disk-healthy", disk_repair, 0, False),
-        ("disk-dirty", disk_repair, 2, True),   # chkdsk /f scheduled
+        ("disk-dirty", disk_repair, 2, True),  # chkdsk /f scheduled
     ]
 
     def _run_all(self, log):
         from contextlib import ExitStack
+
         with ExitStack() as stack:
             for module in (network_repair, update_repair, time_repair):
-                stack.enter_context(mock.patch.object(
-                    module, "service_exists", return_value=True))
-            stack.enter_context(mock.patch(
-                "os.path.isdir", return_value=True))
-            stack.enter_context(mock.patch.object(
-                platform_info, "systemroot", return_value="C:\\Windows"))
+                stack.enter_context(
+                    mock.patch.object(module, "service_exists", return_value=True)
+                )
+            stack.enter_context(mock.patch("os.path.isdir", return_value=True))
+            stack.enter_context(
+                mock.patch.object(
+                    platform_info, "systemroot", return_value="C:\\Windows"
+                )
+            )
             results = {}
             for tag, module, scan_rc, _expected in self.SCENARIOS:
                 runner = self._pipeline_runner(log, stream_rc=scan_rc)
@@ -693,39 +757,42 @@ class TestEndToEndIntegration(unittest.TestCase):
             return results
 
     def test_six_scenarios_flags_and_security(self):
-        log = eventlog.EventLog(path=os.path.join(
-            tempfile.gettempdir(), "fixtool_e2e.log"))
+        log = eventlog.EventLog(
+            path=os.path.join(tempfile.gettempdir(), "fixtool_e2e.log")
+        )
         log.add("start_msg")
         results = self._run_all(log)
         for tag, _module, _rc, expected in self.SCENARIOS:
             self.assertEqual(
-                results[tag].get("reboot_required"), expected,
-                "wrong reboot_required for scenario %s: %s"
-                % (tag, results[tag]))
+                results[tag].get("reboot_required"),
+                expected,
+                f"wrong reboot_required for scenario {tag}: {results[tag]}",
+            )
         # Security invariants over the FULL rendered pipeline output.
         blob = " ".join(log.render(strings_mod.STRINGS["EN"])).lower()
         self.assertNotIn("localgroup", blob)
         self.assertNotIn("administrators", blob)
         self.assertNotIn("://windows.com", blob)
         # Key artifacts of every module flowed through the pipeline.
-        self.assertIn("enable-netadapter", blob)        # network (WMIC-free)
+        self.assertIn("enable-netadapter", blob)  # network (WMIC-free)
         self.assertIn("softwaredistribution.bak_e2e", blob)  # archived, not deleted
-        self.assertIn("time.windows.com,0x9", blob)     # valid NTP peer
-        self.assertIn("dism", blob)                     # component store
-        self.assertIn("chkdsk", blob)                   # disk health
+        self.assertIn("time.windows.com,0x9", blob)  # valid NTP peer
+        self.assertIn("dism", blob)  # component store
+        self.assertIn("chkdsk", blob)  # disk health
         self.assertGreater(len(log.entries), 40)
 
     def test_log_dual_language_render_and_save(self):
-        log = eventlog.EventLog(path=os.path.join(
-            tempfile.gettempdir(), "fixtool_e2e_i18n.log"))
+        log = eventlog.EventLog(
+            path=os.path.join(tempfile.gettempdir(), "fixtool_e2e_i18n.log")
+        )
         log.add("start_msg")
         self._run_all(log)
         ar = " ".join(log.render(strings_mod.STRINGS["AR"]))
         en = " ".join(log.render(strings_mod.STRINGS["EN"]))
         # Arabic surface renders real Arabic text (not raw keys).
-        self.assertIn("تصفير", ar)               # net_winsock
-        self.assertIn("جدولة", ar)               # disk_scheduled (dirty)
-        self.assertNotIn("net_winsock", ar)      # no raw keys leaked
+        self.assertIn("تصفير", ar)  # net_winsock
+        self.assertIn("جدولة", ar)  # disk_scheduled (dirty)
+        self.assertNotIn("net_winsock", ar)  # no raw keys leaked
         self.assertIn("Winsock", en)
         self.assertIn("scheduled", en)
         # The disk-mirror writes cleanly and mirrors both tables.
@@ -741,7 +808,7 @@ class TestEndToEndIntegration(unittest.TestCase):
 # REAL WindowsRepairApp logic (busy-lock races, RTL/LTR mirroring, the
 # main-thread pump) be tested without any display or Tk installation.
 # ---------------------------------------------------------------------------
-class _MockWidget(object):
+class _MockWidget:
     """Recording stand-in for any CustomTkinter widget."""
 
     def __init__(self, master=None, **kwargs):
@@ -831,7 +898,7 @@ class _MockCtkRoot(_MockWidget):
 
 
 class _MockToplevel(_MockWidget):
-    all_instances = []
+    all_instances = []  # noqa: RUF012
 
     def __init__(self, master=None, **kwargs):
         super().__init__(master, **kwargs)
@@ -840,6 +907,7 @@ class _MockToplevel(_MockWidget):
 
 def _make_mock_ctk():
     import types
+
     module = types.ModuleType("mock_customtkinter")
     module.set_appearance_mode = lambda *a, **k: None
     module.set_default_color_theme = lambda *a, **k: None
@@ -860,11 +928,10 @@ class TestGuiAppLogic(unittest.TestCase):
 
     def _make_app(self):
         import FixTool
+
         _MockToplevel.all_instances = []
-        log_path = os.path.join(tempfile.gettempdir(),
-                                "fixtool_gui_headless.log")
-        with mock.patch.object(eventlog, "default_log_path",
-                               return_value=log_path):
+        log_path = os.path.join(tempfile.gettempdir(), "fixtool_gui_headless.log")
+        with mock.patch.object(eventlog, "default_log_path", return_value=log_path):
             app = FixTool.WindowsRepairApp(_make_mock_ctk())
         return app, log_path
 
@@ -873,6 +940,7 @@ class TestGuiAppLogic(unittest.TestCase):
         no-op (busy lock), and the buttons must re-enable only after the
         main-thread pump consumed the completion flag."""
         import time as _t
+
         app, log_path = self._make_app()
         try:
             released = threading.Event()
@@ -882,28 +950,26 @@ class TestGuiAppLogic(unittest.TestCase):
                 return {"reboot_required": False}
 
             with mock.patch.object(network_repair, "repair", slow_repair):
-                app.btn_net.command()   # starts the (blocked) worker
-                app.btn_upd.command()   # must be IGNORED while busy
+                app.btn_net.command()  # starts the (blocked) worker
+                app.btn_upd.command()  # must be IGNORED while busy
                 keys = [e["key"] for e in app.log.entries]
                 self.assertIn("net_start", keys)
                 self.assertNotIn("upd_start", keys)
-                self.assertEqual(
-                    app.btn_net.configures[-1].get("state"), "disabled")
+                self.assertEqual(app.btn_net.configures[-1].get("state"), "disabled")
                 released.set()
                 deadline = _t.monotonic() + 5
                 while _t.monotonic() < deadline:
                     app._poll_log()
-                    if not getattr(app, "_pending_busy_off", False) and \
-                            app.btn_net.configures and \
-                            app.btn_net.configures[-1].get("state") \
-                            == "normal":
+                    if (
+                        not getattr(app, "_pending_busy_off", False)
+                        and app.btn_net.configures
+                        and app.btn_net.configures[-1].get("state") == "normal"
+                    ):
                         break
                     _t.sleep(0.02)
-                self.assertEqual(
-                    app.btn_net.configures[-1].get("state"), "normal")
+                self.assertEqual(app.btn_net.configures[-1].get("state"), "normal")
                 # Once idle, the second operation is accepted.
-                with mock.patch.object(update_repair, "repair",
-                                       lambda r, i: {}):
+                with mock.patch.object(update_repair, "repair", lambda r, i: {}):
                     app.btn_upd.command()
                     keys = [e["key"] for e in app.log.entries]
                     self.assertIn("upd_start", keys)
@@ -922,14 +988,12 @@ class TestGuiAppLogic(unittest.TestCase):
             app.btn_lang.command()  # AR -> EN
             self.assertGreaterEqual(app.log_label.forgotten, 1)
             self.assertEqual(app.log_label.packs[-1].get("anchor"), "w")
-            self.assertEqual(
-                app.status_label.configures[-1].get("anchor"), "w")
-            self.assertIn(
-                "Ready", app.status_label.configures[-1].get("text", ""))
-            self.assertEqual(
-                app.button_frame.packs[-1].get("side"), "left")
+            self.assertEqual(app.status_label.configures[-1].get("anchor"), "w")
+            self.assertIn("Ready", app.status_label.configures[-1].get("text", ""))
+            self.assertEqual(app.button_frame.packs[-1].get("side"), "left")
             self.assertEqual(app.log_frame.packs[-1].get("side"), "right")
             from repair_core import __version__ as core_version
+
             self.assertTrue(app.root.titles[-1].endswith(core_version))
         finally:
             os.remove(log_path)
@@ -939,12 +1003,10 @@ class TestGuiAppLogic(unittest.TestCase):
         try:
             app._set_busy(True)
             for btn in app._action_buttons + [app.btn_reboot]:
-                self.assertEqual(
-                    btn.configures[-1].get("state"), "disabled")
+                self.assertEqual(btn.configures[-1].get("state"), "disabled")
             app._set_busy(False)
             for btn in app._action_buttons + [app.btn_reboot]:
-                self.assertEqual(
-                    btn.configures[-1].get("state"), "normal")
+                self.assertEqual(btn.configures[-1].get("state"), "normal")
         finally:
             os.remove(log_path)
 
@@ -957,7 +1019,7 @@ class TestGuiAppLogic(unittest.TestCase):
                 self.assertEqual(_MockToplevel.all_instances, [])
             finally:
                 app._busy_lock.release()
-            app.btn_reboot.command()      # idle -> dialog is created
+            app.btn_reboot.command()  # idle -> dialog is created
             self.assertEqual(len(_MockToplevel.all_instances), 1)
         finally:
             os.remove(log_path)
@@ -991,6 +1053,7 @@ class TestBootHelpers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import FixTool
+
         cls.fixtool = FixTool
 
     def test_is_admin_returns_bool(self):
@@ -1027,6 +1090,7 @@ class TestBootHelpers(unittest.TestCase):
     def test_main_platform_guard_off_windows(self):
         import io
         from contextlib import redirect_stderr
+
         buf = io.StringIO()
         with redirect_stderr(buf):
             code = self.fixtool.main()
@@ -1037,16 +1101,16 @@ class TestBootHelpers(unittest.TestCase):
 
 class TestEventLog(unittest.TestCase):
     def test_render_translates_retroactively(self):
-        log = eventlog.EventLog(path=os.path.join(tempfile.gettempdir(),
-                                                  "fixtool_test.log"))
+        log = eventlog.EventLog(
+            path=os.path.join(tempfile.gettempdir(), "fixtool_test.log")
+        )
         log.add("net_winsock")
         log.add(raw="netsh winsock reset")
         ar = log.render(strings_mod.STRINGS["AR"])
         en = log.render(strings_mod.STRINGS["EN"])
         self.assertTrue(any("Winsock" in line for line in ar))
         self.assertTrue(any("Winsock" in line for line in en))
-        self.assertTrue(any(line.endswith("netsh winsock reset")
-                            for line in en))
+        self.assertTrue(any(line.endswith("netsh winsock reset") for line in en))
         # per-entry timestamps exist and are preserved between renders
         self.assertEqual([l[:22] for l in ar], [l[:22] for l in en])
 
@@ -1065,26 +1129,29 @@ class TestEventLog(unittest.TestCase):
         preferring Desktop and degrading to the profile root when the
         Desktop is missing or redirected (e.g. OneDrive)."""
         import os as _os
+
         path = eventlog.default_log_path()
         self.assertTrue(path.endswith("Fixer_Events_Log.txt"))
         home = _os.path.expanduser("~")
         self.assertTrue(
             _os.path.abspath(path).startswith(_os.path.abspath(home)),
-            "log escaped the user profile: %s" % path)
+            f"log escaped the user profile: {path}",
+        )
         # When the Desktop folder exists, it must be the preferred target.
         desktop = os.path.join(home, "Desktop")
         if os.path.isdir(desktop):
             self.assertEqual(
-                os.path.dirname(os.path.abspath(path)),
-                os.path.abspath(desktop))
+                os.path.dirname(os.path.abspath(path)), os.path.abspath(desktop)
+            )
 
     def test_concurrent_appends_and_renders_thread_safe(self):
         """THREAD-SAFETY CONTRACT (documented, now tested): worker
         threads only append (list.append is atomic under the GIL) while
         the main thread renders - no exceptions, no lost or corrupted
         entries. This is the exact access pattern the GUI pump uses."""
-        log = eventlog.EventLog(path=os.path.join(
-            tempfile.gettempdir(), "fixtool_conc.log"))
+        log = eventlog.EventLog(
+            path=os.path.join(tempfile.gettempdir(), "fixtool_conc.log")
+        )
         log.add("start_msg")
         errors = []
         start = threading.Event()  # barrier: render loop is armed first
@@ -1094,12 +1161,11 @@ class TestEventLog(unittest.TestCase):
                 start.wait()  # hold until the main thread is ready
                 for i in range(250):
                     log.add("net_winsock")
-                    log.add(raw="line-%s-%d" % (tag, i))
-            except Exception as exc:  # pragma: no cover - failure path
+                    log.add(raw="line-%s-%d" % (tag, i))  # noqa: UP031
+            except Exception as exc:  # pragma: no cover - failure path  # noqa: BLE001
                 errors.append(exc)
 
-        threads = [threading.Thread(target=appender, args=(t,))
-                   for t in range(4)]
+        threads = [threading.Thread(target=appender, args=(t,)) for t in range(4)]
         for t in threads:
             t.start()
         renders = 0
@@ -1113,7 +1179,7 @@ class TestEventLog(unittest.TestCase):
                     break
                 if renders == 1:
                     start.set()  # release the appenders mid-rendering
-        except Exception as exc:  # pragma: no cover - failure path
+        except Exception as exc:  # pragma: no cover - failure path  # noqa: BLE001
             errors.append(exc)
         for t in threads:
             t.join()
@@ -1152,10 +1218,10 @@ class TestRunnerHardening(unittest.TestCase):
         )
         # Force the fallback: on a real Windows host the SCM API answers
         # first, so the parser would never be exercised without this patch.
-        with mock.patch.object(runner, "run",
-                               return_value=CmdResult(0, sample, "")), \
-                mock.patch("repair_core.runner._native_service_state",
-                           return_value=None):
+        with (
+            mock.patch.object(runner, "run", return_value=CmdResult(0, sample, "")),
+            mock.patch("repair_core.runner._native_service_state", return_value=None),
+        ):
             self.assertEqual(runner.service_state("wuauserv"), "RUNNING")
 
     def test_native_service_state_never_raises(self):
@@ -1163,12 +1229,12 @@ class TestRunnerHardening(unittest.TestCase):
         either returns a canonical state name or None - it must never
         raise, whatever the service or platform."""
         from repair_core import runner as runner_mod
+
         state = runner_mod._native_service_state("wuauserv")
         valid = set(runner_mod._SERVICE_STATE_NAMES.values()) | {None}
         self.assertIn(state, valid)
         # A non-existent service must map to None on every platform.
-        self.assertIsNone(
-            runner_mod._native_service_state("DefinitelyNotAService123"))
+        self.assertIsNone(runner_mod._native_service_state("DefinitelyNotAService123"))
 
     def test_run_stream_hard_deadline_kills_stalled_process(self):
         """A process that never exits must be killed at the deadline,
@@ -1178,6 +1244,7 @@ class TestRunnerHardening(unittest.TestCase):
         exist on Windows, and this suite gates the Windows release build
         - every command here must run identically on BOTH platforms."""
         import time as _t
+
         runner, events = self._runner()
         stall = [sys.executable, "-c", "import time; time.sleep(30)"]
         started = _t.monotonic()
@@ -1185,11 +1252,10 @@ class TestRunnerHardening(unittest.TestCase):
         elapsed = _t.monotonic() - started
         self.assertIsNone(rc)
         self.assertLess(elapsed, 10)  # killed ~1s, not 30s
-        self.assertIn("cmd_timeout",
-                      [e[0] for e in events if e[0]])
+        self.assertIn("cmd_timeout", [e[0] for e in events if e[0]])
 
     def test_run_stream_streams_lines_and_returns_rc(self):
-        runner, events = self._runner()
+        runner, _events = self._runner()
         seen = []
         hello = [sys.executable, "-c", "print('hello-audit')"]
         rc = runner.run_stream(hello, timeout=30, on_line=seen.append)
@@ -1210,15 +1276,16 @@ class TestRunnerHardening(unittest.TestCase):
         """Two archives in the same second must not be misreported as a
         locked directory."""
         import tempfile as _tf
-        import time as _t
+
         base = _tf.mkdtemp(prefix="fixtool_coll_")
         try:
             source = os.path.join(base, "src")
             os.makedirs(source)
-            with mock.patch("repair_core.runner.time.strftime",
-                            return_value="20260101_000000"):
+            with mock.patch(
+                "repair_core.runner.time.strftime", return_value="20260101_000000"
+            ):
                 first = self._plain_rename(source)
-                os.makedirs(source)          # recreate for 2nd archive
+                os.makedirs(source)  # recreate for 2nd archive
                 second = self._plain_rename(source)
             self.assertNotEqual(first, second)
             self.assertTrue(second.endswith("_1"))
@@ -1230,6 +1297,7 @@ class TestRunnerHardening(unittest.TestCase):
         """REGRESSION (v2.2.2): a locked old backup used to be skipped
         silently; it must now emit a warning so the operator knows."""
         import tempfile as _tf
+
         events = []
         runner = Runner(on_event=lambda k, p, r, l: events.append((k, p, l)))
         base = _tf.mkdtemp(prefix="fixtool_bak_")
@@ -1239,12 +1307,12 @@ class TestRunnerHardening(unittest.TestCase):
             locked = live + ".bak_20260101_000000"
             with open(locked, "w", encoding="utf-8") as fh:
                 fh.write("old backup")
-            with mock.patch.object(Runner, "delete_path",
-                                   return_value=False):
+            with mock.patch.object(Runner, "delete_path", return_value=False):
                 removed = runner.cleanup_backups(live)
             self.assertEqual(removed, 0)
-            warns = [e for e in events
-                     if e[0] == "backup_delete_failed" and e[2] == "warn"]
+            warns = [
+                e for e in events if e[0] == "backup_delete_failed" and e[2] == "warn"
+            ]
             self.assertEqual(len(warns), 1)
             self.assertIn("20260101", warns[0][1][0])
         finally:
@@ -1253,6 +1321,7 @@ class TestRunnerHardening(unittest.TestCase):
     @staticmethod
     def _plain_rename(path):
         from repair_core.runner import Runner
+
         runner = Runner(on_event=lambda *a: None)
         return runner.rename_dir(path)
 
@@ -1262,6 +1331,7 @@ class TestSfcDecoding(unittest.TestCase):
 
     def test_utf16le_ascii_roundtrip(self):
         from repair_core.system_repair import _decode_sfc
+
         msg = "Windows Resource Protection did not find any integrity violations."
         self.assertEqual(_decode_sfc(msg.encode("utf-16-le")), msg)
 
@@ -1269,6 +1339,7 @@ class TestSfcDecoding(unittest.TestCase):
         """Chinese-Windows SFC output (CJK text + ASCII paths) must be
         detected via NUL-parity evidence, not rejected as mojibake."""
         from repair_core.system_repair import _decode_sfc
+
         msg = "Windows 资源保护找到了损坏文件 C:\\Windows\\system32\\dll 100%"
         decoded = _decode_sfc(msg.encode("utf-16-le"))
         self.assertIn("Windows", decoded)
@@ -1276,20 +1347,23 @@ class TestSfcDecoding(unittest.TestCase):
 
     def test_legacy_codepage_not_misdecoded_as_utf16(self):
         from repair_core.system_repair import _decode_sfc
+
         msg = "Repairs complete: cafe files."
         decoded = _decode_sfc(msg.encode("cp850"))
         self.assertIn("Repairs complete", decoded)
 
     def test_empty_input(self):
         from repair_core.system_repair import _decode_sfc
+
         self.assertEqual(_decode_sfc(b""), "")
 
     def test_mojibake_detector(self):
         from repair_core.system_repair import _looks_like_mojibake
-        self.assertFalse(_looks_like_mojibake("plain ascii text"))
-        self.assertTrue(_looks_like_mojibake(
-            "".join(chr(0x4E00 + i % 100) for i in range(100))))
 
+        self.assertFalse(_looks_like_mojibake("plain ascii text"))
+        self.assertTrue(
+            _looks_like_mojibake("".join(chr(0x4E00 + i % 100) for i in range(100)))
+        )
 
 
 class TestSourceIntegrity(unittest.TestCase):
@@ -1304,6 +1378,7 @@ class TestSourceIntegrity(unittest.TestCase):
     @staticmethod
     def _parse(path):
         import ast
+
         with open(path, encoding="utf-8") as fh:
             return ast.parse(fh.read())
 
@@ -1311,18 +1386,17 @@ class TestSourceIntegrity(unittest.TestCase):
         """A duplicated key in a strings dict literal silently overrides
         the earlier entry - the AR or EN table would lose a translation
         with zero symptoms."""
-        tree = self._parse(os.path.join(self.ROOT, "repair_core",
-                                        "strings.py"))
+        tree = self._parse(os.path.join(self.ROOT, "repair_core", "strings.py"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Dict):
                 seen = set()
                 for key in node.keys:
-                    if isinstance(key, ast.Constant) \
-                            and isinstance(key.value, str):
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str):
                         self.assertNotIn(
-                            key.value, seen,
-                            "duplicate key shadows an earlier entry: %s"
-                            % key.value)
+                            key.value,
+                            seen,
+                            f"duplicate key shadows an earlier entry: {key.value}",
+                        )
                         seen.add(key.value)
 
     def test_no_duplicate_test_methods(self):
@@ -1336,9 +1410,11 @@ class TestSourceIntegrity(unittest.TestCase):
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef):
                         self.assertNotIn(
-                            item.name, seen,
+                            item.name,
+                            seen,
                             "duplicate method shadows an earlier test: "
-                            "%s.%s" % (node.name, item.name))
+                            f"{node.name}.{item.name}",
+                        )
                         seen.add(item.name)
 
     def test_no_duplicate_module_level_classes(self):
@@ -1346,8 +1422,10 @@ class TestSourceIntegrity(unittest.TestCase):
         (the same Python hazard as duplicate dict keys) - a whole test
         class or core class could disappear without any error."""
         root = self.ROOT
-        targets = [os.path.join(root, "FixTool.py"),
-                   os.path.join(root, "tests", "test_core.py")]
+        targets = [
+            os.path.join(root, "FixTool.py"),
+            os.path.join(root, "tests", "test_core.py"),
+        ]
         core_dir = os.path.join(root, "repair_core")
         for name in sorted(os.listdir(core_dir)):
             if name.endswith(".py"):
@@ -1358,9 +1436,11 @@ class TestSourceIntegrity(unittest.TestCase):
             for node in tree.body:
                 if isinstance(node, ast.ClassDef):
                     self.assertNotIn(
-                        node.name, seen,
+                        node.name,
+                        seen,
                         "duplicate class shadows an earlier definition "
-                        "in %s: %s" % (path, node.name))
+                        f"in {path}: {node.name}",
+                    )
                     seen.add(node.name)
 
     def test_readme_test_count_is_accurate(self):
@@ -1369,16 +1449,17 @@ class TestSourceIntegrity(unittest.TestCase):
         reality."""
         tree = self._parse(os.path.abspath(__file__))
         count = sum(
-            1 for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef)
-            and node.name.startswith("test_")
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
         )
-        with open(os.path.join(self.ROOT, "README.md"),
-                  encoding="utf-8") as fh:
+        with open(os.path.join(self.ROOT, "README.md"), encoding="utf-8") as fh:
             readme = fh.read()
         self.assertIn(
-            "{0} unit tests".format(count), readme,
-            "README claims a stale test count (actual: %d)" % count)
+            f"{count} unit tests",
+            readme,
+            "README claims a stale test count (actual: %d)" % count,  # noqa: UP031
+        )
 
     def test_no_unused_imports(self):
         """Dead imports are latent bugs: they hide missing functionality,
@@ -1386,8 +1467,8 @@ class TestSourceIntegrity(unittest.TestCase):
         project must be referenced somewhere in its file (beyond the
         import statement itself)."""
         import re
-        targets = [os.path.join(self.ROOT, "FixTool.py"),
-                   os.path.abspath(__file__)]
+
+        targets = [os.path.join(self.ROOT, "FixTool.py"), os.path.abspath(__file__)]
         core_dir = os.path.join(self.ROOT, "repair_core")
         for name in sorted(os.listdir(core_dir)):
             if name.endswith(".py"):
@@ -1400,34 +1481,38 @@ class TestSourceIntegrity(unittest.TestCase):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        imported.append(alias.asname
-                                        or alias.name.split(".")[0])
+                        imported.append(alias.asname or alias.name.split(".")[0])
                 elif isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         if alias.name != "*":
                             imported.append(alias.asname or alias.name)
-            body = re.sub(r"^import .*$", "", src, flags=re.M)
-            body = re.sub(r"^from .*? import .*$", "", body, flags=re.M)
+            body = re.sub(r"^import .*$", "", src, flags=re.MULTILINE)
+            body = re.sub(r"^from .*? import .*$", "", body, flags=re.MULTILINE)
             for name in imported:
                 self.assertTrue(
-                    re.search(r"\b%s\b" % re.escape(name), body),
-                    "%s imports '%s' but never uses it" % (path, name))
+                    re.search(rf"\b{re.escape(name)}\b", body),
+                    f"{path} imports '{name}' but never uses it",
+                )
 
     def test_package_all_matches_actual_modules(self):
         """repair_core.__all__ must list exactly the package's real
         modules - a drift (module added but not exported, or stale
         entry) breaks star-imports and misdocuments the API."""
         import repair_core
+
         core_dir = os.path.join(self.ROOT, "repair_core")
-        actual = {name[:-3] for name in os.listdir(core_dir)
-                  if name.endswith(".py") and name != "__init__.py"}
+        actual = {
+            name[:-3]
+            for name in os.listdir(core_dir)
+            if name.endswith(".py") and name != "__init__.py"
+        }
         listed = set(repair_core.__all__)
         self.assertEqual(
-            listed, actual,
-            "__all__ drift - missing: %s / stale: %s"
-            % (actual - listed, listed - actual))
+            listed,
+            actual,
+            f"__all__ drift - missing: {actual - listed} / stale: {listed - actual}",
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
-

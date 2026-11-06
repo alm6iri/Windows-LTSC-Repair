@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Deep network stack repair for all Windows 10/11 editions.
 
 Compatibility strategy:
@@ -20,16 +19,16 @@ from .platform_info import service_exists
 
 # (service, start mode) - applied only when the service exists on this SKU.
 SERVICE_MODES = [
-    ("NlaSvc", "auto"),        # Network Location Awareness
-    ("Dhcp", "auto"),          # DHCP Client
-    ("Dnscache", "auto"),      # DNS Client
-    ("nsi", "auto"),           # Network Store Interface
-    ("netprofm", "demand"),    # Network List Service
+    ("NlaSvc", "auto"),  # Network Location Awareness
+    ("Dhcp", "auto"),  # DHCP Client
+    ("Dnscache", "auto"),  # DNS Client
+    ("nsi", "auto"),  # Network Store Interface
+    ("netprofm", "demand"),  # Network List Service
     ("NcbService", "demand"),  # Network Connection Broker
-    ("NetSetupSvc", "demand"), # Network Setup Service
-    ("NcdAutoSetup", "demand"),# Network Connectivity Assistant (non-LTSC)
-    ("CDPSvc", "auto"),        # Connected Devices Platform (non-LTSC)
-    ("WlanSvc", "auto"),       # WLAN AutoConfig (wireless-capable SKUs)
+    ("NetSetupSvc", "demand"),  # Network Setup Service
+    ("NcdAutoSetup", "demand"),  # Network Connectivity Assistant (non-LTSC)
+    ("CDPSvc", "auto"),  # Connected Devices Platform (non-LTSC)
+    ("WlanSvc", "auto"),  # WLAN AutoConfig (wireless-capable SKUs)
 ]
 
 _PS_ENABLE_ADAPTERS = (
@@ -54,8 +53,14 @@ _PS_APPX_REGISTER = (
 
 def _powershell(runner, script, timeout=180):
     return runner.run(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-         "-Command", script],
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
         timeout=timeout,
     )
 
@@ -70,8 +75,15 @@ def _enable_adapters(runner):
     # only on builds where it still exists.
     if platform_info.has_wmic():
         runner.run(
-            ["wmic", "path", "win32_networkadapter",
-             "where", "PhysicalAdapter=True", "call", "enable"],
+            [
+                "wmic",
+                "path",
+                "win32_networkadapter",
+                "where",
+                "PhysicalAdapter=True",
+                "call",
+                "enable",
+            ],
             timeout=120,
         )
     else:
@@ -110,8 +122,7 @@ def repair(runner, info=None):
 
     runner.note("net_ip_reset")
     runner.run(
-        ["netsh", "int", "ip", "reset",
-         os.path.join(root, "resetlog_netsh_ip.txt")],
+        ["netsh", "int", "ip", "reset", os.path.join(root, "resetlog_netsh_ip.txt")],
         timeout=60,
     )
 

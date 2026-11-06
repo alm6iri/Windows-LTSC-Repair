@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Windows LTSC Repair Tool - core engine package.
 
 This package contains all platform-independent (testable) repair logic:
@@ -10,13 +9,13 @@ unit-testable on any OS.
 
 __version__ = "2.3.1"
 __all__ = [
+    "disk_repair",
+    "eventlog",
+    "network_repair",
     "platform_info",
     "runner",
-    "network_repair",
-    "update_repair",
-    "time_repair",
-    "system_repair",
-    "disk_repair",
     "strings",
-    "eventlog",
+    "system_repair",
+    "time_repair",
+    "update_repair",
 ]

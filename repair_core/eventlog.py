@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Thread-safe event log store + desktop log-file writer.
 
 Entries keep their own timestamp (v1 stamped the whole log with a single
@@ -15,7 +14,7 @@ import os
 import time
 
 
-class EventLog(object):
+class EventLog:
     def __init__(self, path=None):
         self.entries = []
         self.path = path or default_log_path()
@@ -23,13 +22,15 @@ class EventLog(object):
     def add(self, key=None, params=(), raw=None, level="info", ts=None):
         """Append an entry. ``key`` entries are translatable; ``raw``
         entries are verbatim text (commands, DISM/SFC output)."""
-        self.entries.append({
-            "ts": ts or time.strftime("%Y-%m-%d %H:%M:%S"),
-            "key": key,
-            "params": tuple(params or ()),
-            "raw": raw,
-            "level": level,
-        })
+        self.entries.append(
+            {
+                "ts": ts or time.strftime("%Y-%m-%d %H:%M:%S"),
+                "key": key,
+                "params": tuple(params or ()),
+                "raw": raw,
+                "level": level,
+            }
+        )
 
     def render(self, strings, entries=None):
         """Render entries into display lines using a strings table.
@@ -37,8 +38,9 @@ class EventLog(object):
         ``entries`` defaults to the live history; the GUI passes a
         snapshot so worker-thread appends can never race the render."""
         from .strings import render as _render  # local import: no cycle risk
+
         lines = []
-        for entry in (self.entries if entries is None else entries):
+        for entry in self.entries if entries is None else entries:
             if entry["key"] is not None:
                 text = _render(strings, entry["key"], entry["params"])
             else:
@@ -48,7 +50,7 @@ class EventLog(object):
                 prefix = "[!] "
             elif entry["level"] == "cmd":
                 prefix = "  > "
-            lines.append("[{0}] {1}{2}".format(entry["ts"], prefix, text))
+            lines.append(f"[{entry['ts']}] {prefix}{text}")
         return lines
 
     def save(self, strings):
@@ -63,12 +65,13 @@ class EventLog(object):
         try:
             with open(temporary, "w", encoding="utf-8") as handle:
                 handle.write(
-                    "===== FixTool session {0} =====\n\n".format(
+                    "===== FixTool session {} =====\n\n".format(
                         time.strftime("%Y-%m-%d %H:%M:%S")
                     )
                 )
-                for line in self.render(strings, self.entries[:]):
-                    handle.write(line + "\n")
+                handle.writelines(
+                    line + "\n" for line in self.render(strings, self.entries[:])
+                )
             os.replace(temporary, self.path)
             return True
         except OSError:

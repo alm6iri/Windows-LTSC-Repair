@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Safe, console-free command runner and Windows service manager.
 
 Design goals:
@@ -39,13 +38,14 @@ def _console_encoding():
     the process locale."""
     if os.name == "nt":
         try:
-            return "cp{0}".format(ctypes.windll.kernel32.GetOEMCP())
-        except Exception:
+            return f"cp{ctypes.windll.kernel32.GetOEMCP()}"
+        except Exception:  # noqa: BLE001, S110
             pass
     try:
         return locale.getpreferredencoding(False) or "utf-8"
-    except Exception:
+    except Exception:  # noqa: BLE001
         return "utf-8"
+
 
 _STATE_RE = re.compile(r"STATE\s*:\s*\d+\s+([A-Z]+)")
 
@@ -88,14 +88,24 @@ def _native_service_state(name):
         # back to parsing localized `sc` output.
         advapi32.OpenSCManagerW.restype = ctypes.c_void_p
         advapi32.OpenSCManagerW.argtypes = [
-            ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+        ]
         advapi32.OpenServiceW.restype = ctypes.c_void_p
         advapi32.OpenServiceW.argtypes = [
-            ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32]
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+        ]
         advapi32.QueryServiceStatusEx.restype = ctypes.c_int
         advapi32.QueryServiceStatusEx.argtypes = [
-            ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
-            ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
         advapi32.CloseServiceHandle.restype = ctypes.c_int
         advapi32.CloseServiceHandle.argtypes = [ctypes.c_void_p]
 
@@ -103,16 +113,19 @@ def _native_service_state(name):
         if not manager:
             return None
         try:
-            service = advapi32.OpenServiceW(
-                manager, name, SERVICE_QUERY_STATUS)
+            service = advapi32.OpenServiceW(manager, name, SERVICE_QUERY_STATUS)
             if not service:
                 return None
             try:
                 buf = ctypes.create_string_buffer(64)  # 36 bytes needed
                 needed = ctypes.c_uint32(0)
                 ok = advapi32.QueryServiceStatusEx(
-                    service, SC_STATUS_PROCESS_INFO, buf,
-                    ctypes.sizeof(buf), ctypes.byref(needed))
+                    service,
+                    SC_STATUS_PROCESS_INFO,
+                    buf,
+                    ctypes.sizeof(buf),
+                    ctypes.byref(needed),
+                )
                 if not ok:
                     return None
                 # dwCurrentState is the second DWORD of the struct.
@@ -122,15 +135,15 @@ def _native_service_state(name):
                 advapi32.CloseServiceHandle(service)
         finally:
             advapi32.CloseServiceHandle(manager)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
-class CmdResult(object):
+class CmdResult:
     """Uniform result object; ``rc`` is None when the command could not be
     launched at all (missing binary / timeout)."""
 
-    __slots__ = ("rc", "out", "err")
+    __slots__ = ("err", "out", "rc")
 
     def __init__(self, rc=None, out="", err=""):
         self.rc = rc
@@ -149,7 +162,7 @@ def fmt_cmd(cmd):
     return subprocess.list2cmdline(cmd)
 
 
-class Runner(object):
+class Runner:
     """Executes repair commands and reports every step through ``on_event``.
 
     ``on_event(key, params, raw, level)`` is called from worker threads.
@@ -175,14 +188,14 @@ class Runner(object):
         ``input`` pipes stdin (used to answer CHKDSK's Y/N reboot prompt)."""
         if report:
             self._raw(fmt_cmd(cmd), "cmd")
-        kwargs = dict(
-            capture_output=True,
-            text=True,
-            encoding=_console_encoding(),
-            errors="replace",
-            timeout=timeout,
-            creationflags=_NO_WINDOW,
-        )
+        kwargs = {
+            "capture_output": True,
+            "text": True,
+            "encoding": _console_encoding(),
+            "errors": "replace",
+            "timeout": timeout,
+            "creationflags": _NO_WINDOW,
+        }
         # Never inherit the GUI's stdin: a service prompt would otherwise
         # block the worker forever (the timeout only fires while waiting
         # for the process to exit, not while it waits for input).
@@ -191,7 +204,7 @@ class Runner(object):
         else:
             kwargs["input"] = input
         try:
-            proc = subprocess.run(cmd, **kwargs)
+            proc = subprocess.run(cmd, **kwargs)  # noqa: PLW1510
             result = CmdResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired:
             self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
@@ -239,7 +252,7 @@ class Runner(object):
                     line = line.rstrip()
                     if line and on_line:
                         on_line(line)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass  # reader dies with the process; never propagates
 
         reader = threading.Thread(target=_pump, daemon=True)
@@ -251,7 +264,7 @@ class Runner(object):
                 proc.kill()
                 try:
                     proc.wait(timeout=10)  # reap the killed process (no
-                except Exception:          # zombie, no ResourceWarning)
+                except Exception:  # zombie, no ResourceWarning)  # noqa: BLE001, S110
                     pass
                 self.note("cmd_timeout", (fmt_cmd(cmd), timeout), "warn")
                 return None
@@ -259,7 +272,7 @@ class Runner(object):
                 proc.kill()
                 try:
                     proc.wait(timeout=10)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 self.note("cmd_failed", (None, str(exc)), "warn")
                 return None
@@ -271,7 +284,7 @@ class Runner(object):
             # leaks a descriptor until collection.
             try:
                 proc.stdout.close()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
     def run_bytes(self, cmd, timeout=3600):
@@ -279,8 +292,10 @@ class Runner(object):
         output is UTF-16LE on all supported builds)."""
         self._raw(fmt_cmd(cmd), "cmd")
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, timeout=timeout,
+            proc = subprocess.run(  # noqa: PLW1510
+                cmd,
+                capture_output=True,
+                timeout=timeout,
                 stdin=subprocess.DEVNULL,
                 creationflags=_NO_WINDOW,
             )
@@ -355,9 +370,7 @@ class Runner(object):
     def set_start_mode(self, name, mode):
         """Configure a service start mode via `sc config name start= mode`
         (note: sc requires the token `start=` followed by the value)."""
-        return self.run(
-            ["sc", "config", name, "start=", mode], timeout=30
-        ).ok
+        return self.run(["sc", "config", name, "start=", mode], timeout=30).ok
 
     # ------------------------------------------------------------ filesystem
     def rename_dir(self, path, suffix=".bak"):
@@ -368,14 +381,14 @@ class Runner(object):
         if not os.path.isdir(path):
             return None
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        target = "{0}{1}_{2}".format(path, suffix, stamp)
+        target = f"{path}{suffix}_{stamp}"
         # Collision guard: two repairs inside the same second (or a
         # leftover archive from a previous session) must never make the
         # rename fail and be misreported as a "locked" directory.
         counter = 0
         while os.path.exists(target):
             counter += 1
-            target = "{0}{1}_{2}_{3}".format(path, suffix, stamp, counter)
+            target = f"{path}{suffix}_{stamp}_{counter}"
         for _attempt in range(3):
             try:
                 os.rename(path, target)
@@ -424,4 +437,3 @@ class Runner(object):
             else:
                 self.note("backup_delete_failed", (old,), "warn")
         return removed
-

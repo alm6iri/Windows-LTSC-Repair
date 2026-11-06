@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Windows Update reset - corruption-proof rebuild of the update stack.
 
 Safety model (v1 used `rd /s /q` blindly):

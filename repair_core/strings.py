@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Complete AR/EN localization table.
 
 Invariants enforced by unit tests:
@@ -107,7 +106,6 @@ STRINGS = {
         "anchor": "e",
         "justify": "right",
     },
-
     "EN": {
         # ---- window / chrome -------------------------------------------------
         "title_win": "Windows Repair Tool",
@@ -210,7 +208,6 @@ STRINGS = {
 }
 
 
-
 def for_lang(lang):
     """Return the table for a language code (defaults to EN)."""
     return STRINGS.get(lang, STRINGS["EN"])
@@ -224,4 +221,3 @@ def render(strings, key, params=()):
         return template.format(*params)
     except (IndexError, KeyError, ValueError):
         return template
-
