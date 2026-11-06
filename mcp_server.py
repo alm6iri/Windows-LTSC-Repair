@@ -20,6 +20,7 @@ Design invariants:
 # Use is governed by the Personal and Internal Use License in LICENSE.
 # Commercial redistribution, resale, and sublicensing require written permission.
 
+import ctypes
 import json
 import threading
 import time
@@ -159,6 +160,14 @@ def _build_response(
     return payload
 
 
+def _is_admin() -> bool:
+    """Read elevation independently of the WindowsInfo SKU snapshot."""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except (AttributeError, OSError):
+        return False
+
+
 def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[str, Any]:
     """Shared executor for all repair tools."""
     if not _LOCK.acquire(blocking=False):
@@ -174,7 +183,7 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[st
     eventlog = EventLog()
     try:
         info = platform_info.detect()
-        if not info.get("is_windows"):
+        if not info.available:
             return _build_response(
                 tool,
                 eventlog,
@@ -184,7 +193,7 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[st
                     "error": "This tool only works on Windows hosts.",
                 },
             )
-        if not info.get("is_admin"):
+        if not _is_admin():
             return _build_response(
                 tool,
                 eventlog,
@@ -193,7 +202,7 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[st
                 {
                     "error": "Administrator privileges are required. Relaunch "
                     "the MCP server elevated (UAC) and retry.",
-                    "target_system": info.get("label"),
+                    "target_system": info.summary(),
                 },
             )
 
@@ -207,7 +216,7 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[st
             started,
             "success",
             {
-                "target_system": info.get("label"),
+                "target_system": info.summary(),
                 "reboot_recommended": tool
                 in {"run_network_repair", "run_disk_repair", "run_update_repair"},
             },
@@ -232,15 +241,22 @@ def _detect_platform() -> dict[str, Any]:
     try:
         info = platform_info.detect()
         runner = Runner(_on_event(eventlog))
-        runner.note("sys_lbl", params=(info.get("label", "?"),), level="info")
+        runner.note("sys_lbl", params=(info.summary(),), level="info")
         return _build_response(
             "detect_platform",
             eventlog,
             started,
             "success",
             {
-                "target_system": info.get("label"),
-                "details": info,
+                "target_system": info.summary(),
+                "details": {
+                    **vars(info),
+                    "is_windows": info.available,
+                    "is_admin": _is_admin(),
+                    "label": info.summary(),
+                    "release": info.release,
+                    "build_full": info.build_full,
+                },
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -271,7 +287,15 @@ def _reboot_system(confirm: bool) -> dict[str, Any]:
         )
     try:
         info = platform_info.detect()
-        if not info.get("is_admin"):
+        if not info.available:
+            return _build_response(
+                "reboot_system",
+                eventlog,
+                started,
+                "blocked",
+                {"error": "This tool only works on Windows hosts."},
+            )
+        if not _is_admin():
             return _build_response(
                 "reboot_system",
                 eventlog,
@@ -294,7 +318,7 @@ def _reboot_system(confirm: bool) -> dict[str, Any]:
             started,
             "success",
             {
-                "target_system": info.get("label"),
+                "target_system": info.summary(),
                 "note": "Reboot scheduled in 5 seconds (shutdown /r /t 5).",
             },
         )

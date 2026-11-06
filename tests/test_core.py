@@ -1049,20 +1049,20 @@ class TestMCPServer(unittest.TestCase):
     def test_detect_platform_returns_structured_success(self):
         import mcp_server
 
-        fake_info = {
-            "is_windows": True,
-            "is_admin": True,
-            "label": "Windows test host",
-        }
+        fake_info = platform_info.WindowsInfo()
+        fake_info.available = True
+        fake_info.edition_id = "EnterpriseS"
+        fake_info.build = 19044
+        fake_info.is_ltsc = True
         with mock.patch.object(
             mcp_server.platform_info, "detect", return_value=fake_info
         ):
             result = mcp_server._detect_platform()
 
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["target_system"], "Windows test host")
+        self.assertEqual(result["target_system"], fake_info.summary())
         self.assertEqual(
-            result["events"][0]["message"], "Target system: Windows test host"
+            result["events"][0]["message"], f"Target system: {fake_info.summary()}"
         )
 
 
