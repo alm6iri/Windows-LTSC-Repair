@@ -1,134 +1,98 @@
-# Windows Repair Tool 🛠️ (LTSC + all Windows 10/11 editions)
+# Windows LTSC Repair
 
-An enterprise-grade GUI utility, written natively in **Python** with
-**CustomTkinter**, that diagnoses and repairs deep operating-system
-failures on **every edition of Windows 10 and Windows 11** — Home, Pro,
-Pro for Workstations, Enterprise, Education, **all LTSC releases
-(2015/2016/2019/2021/2024)**, IoT Enterprise (incl. IoT LTSC) — from
-build 1507 all the way to 25H2/LTSC 2024.
+Windows LTSC Repair is a Windows maintenance utility with a CustomTkinter desktop
+interface, a platform-independent repair core, and an optional MCP server for
+agent-driven operations. The project is designed for explicit, observable
+repair workflows rather than opaque automation.
 
-## Supported compatibility matrix 🧩
+[Open the bilingual project portal](docs/index.html) for the product overview,
+operation guide, safety notes, and architecture. Select **EN / AR** in the page
+to switch language; Arabic content uses right-to-left layout.
 
-| | Windows 10 (1507 → 22H2 / LTSC 2021) | Windows 11 (21H2 → 25H2 / LTSC 2024) |
-|---|---|---|
-| Network repair | ✅ `wmic` fallback available | ✅ PowerShell `Enable-NetAdapter` (WMIC removed in 24H2) |
-| Update reset | ✅ incl. `doSvc` (Delivery Optimization) | ✅ |
-| Time sync | ✅ | ✅ |
-| SFC + DISM repair | ✅ | ✅ (handles SFC's UTF-16 redirected output) |
-| Disk health (CHKDSK + SMART) | ✅ online `/scan`, offline fix scheduled on reboot | ✅ |
-| AppX re-register | ✅ auto-skipped on Store-less images (LTSC) | ✅ |
+> **License update:** this repository is now governed by the Personal and
+> Internal Use License in [`LICENSE`](LICENSE) for material the maintainer has
+> authority to license under these terms. Internal business use is permitted;
+> commercial redistribution, resale, sublicensing, and third-party service
+> delivery require separate written permission. Previous MIT grants remain
+> valid for copies received under MIT. Third-party and contributor-owned
+> material retains its applicable rights and notices. This is source-available,
+> not an OSI-approved open-source license. Consult counsel about relicensing.
 
-## Architecture 🧠
+## Features
 
-The tool is split into a unit-testable core and a thin GUI:
+- Windows 10/11 maintenance, including LTSC-oriented platform handling.
+- Repair modules for network, Windows Update, time synchronization, system
+  integrity, and disk health.
+- Structured logging and Arabic/English application strings.
+- MCP server (`mcp_server.py`) exposing seven tools: platform detection, five
+  repair actions, and a reboot action guarded by an explicit confirmation value.
+- 75 unit tests that mock Windows-specific behavior; Windows-only skips are reported separately.
 
-```
-FixTool.py                  # GUI (CustomTkinter) + UAC elevation + DPI awareness
-repair_core/
-  platform_info.py          # SKU/build/LTSC/IoT detection (registry-driven, zero subprocesses)
-  runner.py                 # Console-free command runner: timeouts, retries, verified service stops
-  network_repair.py         # Winsock/IP reset, adapter re-enable, service gating, AppX probe
-  update_repair.py          # Verified service stops, ARCHIVE (rename) instead of rd /s /q, restart chain
-  time_repair.py            # w32time re-register, valid NTP peers, resync retries
-  system_repair.py          # DISM /RestoreHealth + sfc /scannow (UTF-16-safe)
-  disk_repair.py            # SMART health + online chkdsk /scan; offline fix scheduled only when needed
-  strings.py                # Full AR/EN localization (symmetric, test-enforced)
-  eventlog.py               # Thread-safe event log + desktop log file
-tests/test_core.py          # 75 unit tests - run on ANY OS (Windows specifics mocked)
-tests/mutation_audit.py     # mutation harness - proves the suite catches the 10 historical defect classes
-Windows-LTSC-Repair.spec    # PyInstaller release spec (onefile, windowed, uac_admin, icon)
-packaging/
-  app.manifest              # Standalone requireAdministrator + PerMonitorV2 manifest
-  build_windows.bat         # One-command Windows build (tests gate the build)
-```
+## Safety
 
-### Engineering highlights ⚡
+This software invokes privileged Windows operations. Review the code and terms,
+run only on systems you are authorized to administer, and ensure backups and
+recovery options are available. Repair operations may interrupt connectivity or
+run for an extended period. A successful tool response means its implementation
+returned successfully; verify the original system symptom separately.
 
-- **Race-free dispatch:** only one repair can run at a time (non-blocking
-  lock); action buttons disable while running, GUI never freezes.
-- **Thread-safe logging:** workers only append entries; the main thread
-  renders them via a 250 ms poller — no cross-thread Tk calls.
-- **Every command has a timeout** — a hung repair can never hang the app.
-- **Verified service stops:** `sc stop` + state polling (handles shared
-  svchost services) instead of fire-and-forget `net stop`.
-- **Safe archive model:** `SoftwareDistribution` / `catroot2` are renamed
-  to timestamped backups (never hard-deleted), and old backups are
-  cleaned up automatically.
-- **Registry-gated service configuration:** only services that actually
-  exist on the running SKU are touched (CDPSvc, WlanSvc, NcdAutoSetup are
-  absent on many LTSC images).
-- **Retroactive translation:** switching AR/EN re-renders the whole log,
-  with per-entry timestamps preserved.
-- **Security hardening:** v1 added `NetworkService`/`LocalService` to the
-  local **Administrators** group — a severe privilege-escalation
-  misconfiguration that has been removed and is now blocked by a
-  regression unit test.
-- **Locale-independent service control:** service states are queried via
-  the SCM API (`QueryServiceStatusEx`), not by parsing `sc query` text —
-  `sc.exe` output is localized and would silently break the tool on
-  non-English Windows.
-- **Hard deadlines everywhere:** streamed commands (DISM/SFC/CHKDSK) run
-  under a watchdog that kills stalled processes, so a hung repair can
-  never freeze the worker or hold the UI busy-lock.
-- **%SystemRoot% aware:** never assumes Windows lives on `C:\`.
+The MCP server checks platform and elevation for repair operations. It permits
+only one repair at a time per server process. `reboot_system` requires
+`confirm: true`; obtain explicit user approval before requesting a restart.
 
-## Running from source 📦
+## Run from source
 
 ```bash
-pip install -r requirements.txt
-python FixTool.py        # UAC prompt appears automatically
+python -m pip install -r requirements.txt
+python FixTool.py
 ```
 
-## Building the executable 🚀
+Run `FixTool.py` on Windows. The GUI may request administrator elevation.
 
-The release pipeline is spec-driven and **gated by the test suite** — run
-this single command on a Windows host (PyInstaller does not
-cross-compile, so the .exe must be produced on Windows):
+## MCP server
 
-```bat
-packaging\build_windows.bat
+Install the optional `mcp` package in the Python environment used by your MCP
+host, then configure the host to run `mcp_server.py`:
+
+```json
+{
+  "mcpServers": {
+    "windows-ltsc-repair": {
+      "command": "python",
+      "args": ["/absolute/path/to/mcp_server.py"]
+    }
+  }
+}
 ```
 
-which is equivalent to:
+Use an elevated host only on an authorized Windows system. The service checks
+platform/elevation and returns structured results. It does not replace human
+approval for a reboot.
+
+## Build
+
+The Windows executable is built on Windows; PyInstaller does not cross-compile.
+Run `packaging\build_windows.bat` to install build requirements, run tests, and
+produce `dist\Windows-LTSC-Repair.exe`.
+
+## Verify
 
 ```bash
-python -m pip install -r requirements.txt pyinstaller
-python -m unittest discover -s tests        # build aborts on failure
-python -m PyInstaller --noconfirm --clean Windows-LTSC-Repair.spec
-```
-
-Output: `dist\Windows-LTSC-Repair.exe` — a single onefile, windowed
-executable with the multi-resolution icon and an embedded
-`requireAdministrator` manifest (`uac_admin=True` in the spec; a
-standalone manifest with PerMonitorV2 DPI awareness is also provided at
-`packaging/app.manifest` for MSVC/embedding workflows). The spec
-explicitly collects customtkinter's theme assets and pins the
-`repair_core` package, so no dependency can be silently dropped.
-
-> Note: the app also **self-elevates** (with correct argv quoting) when
-> run from source — `python FixTool.py` — even without the manifest.
-
-## Tests 🧪
-
-The core is fully testable on any OS (Linux CI included) — all Windows
-specifics are mocked:
-
-```bash
+python -m compileall -q .
 python -m unittest discover -s tests -v
+ruff check .
+ruff format --check .
 ```
 
-## Log file 📄
+CI runs the unit suite on Windows and Ubuntu with Python 3.11, 3.12, and 3.13,
+and checks Ruff lint/format on Ubuntu with Python 3.12.
 
-A live mirror of the on-screen event log is written to
-`Desktop\Fixer_Events_Log.txt` (falls back to the user profile when the
-Desktop is redirected, e.g. OneDrive).
+## Documentation
 
-## Notes ℹ️
-
-- The **network repair** requires a reboot to fully apply (Winsock/IP
-  resets) — the tool tells you when.
-- **DISM** may use Windows Update as a repair source; on LTSC images
-  without update connectivity, mount a matching ISO and use
-  `/Source:<wim>` for faster repairs.
-- **SFC** results that could not be repaired automatically are detailed
-  in `C:\Windows\Logs\CBS\CBS.log`.
+- [Project portal, EN/AR](docs/index.html)
+- [Wiki: Welcome](wiki/Welcome.md)
+- [Operations and safety](wiki/Operations.md)
+- [Architecture and development](wiki/Development.md)
+- [License](LICENSE)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)

@@ -1,57 +1,44 @@
 # Contributing to Windows-LTSC-Repair
 
-Thank you for considering a contribution! This project follows standard
-open-source engineering practices. Please read this guide before opening a
-pull request.
+This repository is maintained for personal and internal use. Read `LICENSE`
+before copying, modifying, sharing, or contributing code.
 
-## How to Contribute
+## Contribution workflow
 
-1. **Fork** the repository and create your branch from `main`:
+1. Create a branch from `main`.
+2. Make a focused change and add or update tests for behavior changes.
+3. Run the local verification commands:
+
    ```bash
-   git checkout -b feat/your-feature-name
-   ```
-2. **Make your changes** following the coding standards below.
-3. **Run the test suite** locally and ensure it passes:
-   ```bash
+   python -m compileall -q .
    python -m unittest discover -s tests -v
+   ruff check .
+   ruff format --check .
    ```
-4. **Commit** with a clear, descriptive message using
-   [Conventional Commits](https://www.conventionalcommits.org/):
-   ```bash
-   git commit -m "fix(core): prevent service deadlock on repeated runs"
-   ```
-5. **Push** and open a pull request against `main`.
 
-## Coding Standards
+4. Review `git diff --check` and remove generated files, logs, binaries, and
+   secrets.
+5. Use a Conventional Commit message and open a pull request against `main`.
 
-- All Python code must run on the minimum supported Python version
-  (see `pyproject.toml` for the exact floor).
-- Every new feature or bug fix **must include or update unit tests**.
-- Prefer explicit argument lists over shell-string concatenation when
-  invoking external commands.
-- Keep module responsibilities narrow: one concern per module under
-  `repair_core/`.
-- Do not introduce any command that modifies system state without a
-  corresponding test asserting the exact command shape.
+## Engineering standards
 
-## Pull Request Checklist
+- Keep repair logic in the narrowest appropriate module under `repair_core/`.
+- Use explicit subprocess argument lists; never construct shell command strings
+  from user input.
+- Bound external commands with timeouts and preserve the single-operation lock.
+- Do not add system-mutating commands without a test asserting their exact
+  command shape and safety preconditions.
+- Preserve platform guards, elevation checks, archive safeguards, and the
+  explicit reboot confirmation gate.
 
-- [ ] Tests pass (`python -m unittest discover -s tests`)
-- [ ] New/changed behavior is covered by tests
-- [ ] `README.md` updated if behavior or usage changed
-- [ ] Commit messages follow Conventional Commits
-- [ ] No system-modifying commands added without a safety guard test
+## Commercial and distribution restrictions
 
-## Reporting Bugs
+Contributions do not grant permission to commercially redistribute, resell,
+sublicense, host, or package this project. Any use outside personal or internal
+organizational use requires a separate written license from the copyright holder.
+See `LICENSE` for the controlling terms.
 
-Open an issue using the **Bug Report** template. Include:
+## Security reports
 
-- Windows version and edition (LTSC or otherwise)
-- Python version
-- Full log output from the tool
-- Minimal steps to reproduce
-
-## License
-
-By contributing, you agree that your contributions will be licensed under
-the [MIT License](LICENSE) that covers this project.
+Do not disclose vulnerabilities in public issues. Use a private GitHub security
+advisory or the contact process in `SECURITY.md`.

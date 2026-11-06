@@ -15,6 +15,10 @@ Exit-code classification (Microsoft-documented):
   3+ -> errors that could not be fixed.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import ntpath
 
 from . import platform_info

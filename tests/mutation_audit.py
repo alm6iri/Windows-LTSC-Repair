@@ -8,6 +8,10 @@ modified on disk.
 Run on demand (NOT part of the gated build - it lives outside the
 test*.py discovery pattern):  python3 tests/mutation_audit.py"""
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import subprocess
 import sys
 

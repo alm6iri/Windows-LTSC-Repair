@@ -9,6 +9,10 @@ UTF-16LE on all supported builds - decoding it as UTF-8 yields mojibake,
 so we capture raw bytes and decode defensively.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import os
 
 from . import platform_info

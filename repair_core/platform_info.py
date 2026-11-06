@@ -9,6 +9,10 @@ Everything degrades gracefully: on non-Windows systems (dev/CI sandboxes)
 ``detect()`` returns an "unavailable" info object instead of crashing.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import os
 import shutil
 

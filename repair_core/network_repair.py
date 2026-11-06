@@ -12,6 +12,10 @@ Compatibility strategy:
   privilege-escalation misconfiguration and has been removed entirely).
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import os
 
 from . import platform_info

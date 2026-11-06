@@ -12,6 +12,10 @@ Safety model (v1 used `rd /s /q` blindly):
    default) and restart the whole chain in dependency order.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import os
 
 from . import platform_info

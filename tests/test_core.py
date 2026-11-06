@@ -7,6 +7,10 @@ are verified without touching a real system.
 Run:  python -m unittest discover -s tests -v
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import ast
 import os
 import shutil

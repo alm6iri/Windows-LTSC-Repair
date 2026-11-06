@@ -6,6 +6,10 @@ Invariants enforced by unit tests:
 * Placeholders are positional ({0}, {1}) and rendered with str.format.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 STRINGS = {
     "AR": {
         # ---- window / chrome -------------------------------------------------

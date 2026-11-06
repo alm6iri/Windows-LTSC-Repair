@@ -7,6 +7,10 @@ and only *consumes* this package, which keeps every command decision
 unit-testable on any OS.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 __version__ = "2.3.1"
 __all__ = [
     "disk_repair",

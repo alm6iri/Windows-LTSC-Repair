@@ -10,6 +10,10 @@ threads only append in-memory entries (list.append is atomic under the
 GIL), which eliminates interleaved/partial writes.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import os
 import time
 

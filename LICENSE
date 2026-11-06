@@ -1,21 +1,82 @@
-MIT License
+PERSONAL AND INTERNAL USE LICENSE
 
-Copyright (c) 2026 alm6iri
+Copyright (c) 2026 alm6iri. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+"Software" means the source code, object code, documentation, designs, and
+other materials in this repository, including modified or derived versions.
+"Licensor" means the copyright holder identified above. "You" means the
+individual or legal entity receiving or using the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Limited permission
+
+Subject to these terms, Licensor grants You a limited, revocable, non-exclusive,
+non-transferable, non-sublicensable permission to use, inspect, and modify the
+Software solely for Your own personal purposes or within Your own organization
+for internal business operations. This permission does not authorize providing
+the Software or a derivative as a service, product, or deliverable to another
+person or organization.
+
+3. Prohibited uses
+
+Unless Licensor gives prior written permission, You must not:
+
+- sell, rent, lease, publish, distribute, or commercially redistribute the
+  Software or any copy, in whole or in part;
+- use the Software to provide paid, hosted, managed, consulting, or other
+  commercial services to a third party;
+- sublicense, assign, transfer, or grant another person rights to the Software;
+- offer the Software, a derivative, or a substantially similar repackaging as a
+  competing or commercial product;
+- remove or obscure copyright, ownership, or license notices.
+
+Posting a copy, fork, mirror, binary, or derivative for public download is
+redistribution and is not permitted by this license without prior written
+permission. Public visibility of this repository does not grant additional
+permissions.
+
+4. Ownership and contributions
+
+The Software is licensed, not sold. Licensor retains all rights not expressly
+granted. You retain ownership of original modifications You create, subject to
+Licensor's rights in the underlying Software. Do not submit contributions
+unless You have the authority to do so and agree that they will be governed by
+this license, unless a separate written agreement says otherwise.
+
+5. Existing grants and third-party materials
+
+These terms apply only to material Licensor has authority to license under
+these terms. They do not revoke permissions already granted for earlier
+copies under the MIT License, or override third-party or contributor-owned
+material licensed on other terms. Those licenses and required notices remain
+in force. You are responsible for complying with applicable terms.
+This is a source-available license, not an OSI-approved open-source license.
+
+6. Term and termination
+
+This permission terminates automatically if You materially breach these terms.
+Upon termination, stop using the Software and delete copies in Your control,
+except where retention is required by law. Sections concerning ownership,
+limitations, and liability survive termination.
+
+7. Disclaimer and limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" AND
+"AS AVAILABLE", WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE,
+AND NON-INFRINGEMENT. THE LICENSOR IS NOT LIABLE FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES, OR FOR LOSS OF DATA, PROFITS,
+BUSINESS, SYSTEM AVAILABILITY, OR GOODWILL, ARISING FROM OR RELATED TO THE
+SOFTWARE OR THESE TERMS. NOTHING IN THESE TERMS EXCLUDES LIABILITY THAT CANNOT
+LAWFULLY BE EXCLUDED.
+
+8. Governing terms
+
+Any permission beyond personal or internal use, including commercial use,
+redistribution, resale, or sublicensing, requires a separate written license
+signed by Licensor. If a provision is unenforceable, the remaining provisions
+continue to apply to the extent permitted by law.
+
+This license is a template and is not legal advice. Have counsel review it for
+the jurisdictions and use cases that matter to You.

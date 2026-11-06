@@ -8,6 +8,10 @@ the resync (the first attempt frequently fails while the service warms
 up), then dumps the resulting sync status into the event log.
 """
 
+# Copyright (c) 2026 alm6iri. All rights reserved.
+# Use is governed by the Personal and Internal Use License in LICENSE.
+# Commercial redistribution, resale, and sublicensing require written permission.
+
 import time
 
 from .platform_info import service_exists
