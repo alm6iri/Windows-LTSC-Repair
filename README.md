@@ -24,8 +24,7 @@ to switch language; Arabic content uses right-to-left layout.
 - Repair modules for network, Windows Update, time synchronization, system
   integrity, and disk health.
 - Structured logging and Arabic/English application strings.
-- MCP server (`mcp_server.py`) exposing seven tools: platform detection, five
-  repair actions, and a reboot action guarded by an explicit confirmation value.
+- MCP server (`mcp_server.py`) uses MCP SDK v1.28+ `FastMCP` and exposes seven tools with structured responses, platform/elevation checks, and a reboot gate.
 - 76 unit tests that mock Windows-specific behavior; Windows-only skips are reported separately.
 
 ## Safety
@@ -51,8 +50,7 @@ Run `FixTool.py` on Windows. The GUI may request administrator elevation.
 
 ## MCP server
 
-Install the optional `mcp` package in the Python environment used by your MCP
-host, then configure the host to run `mcp_server.py`:
+Install the MCP dependency from `requirements.txt` (`mcp>=1.28,<2`). The server uses the Python MCP SDK v1.28+ `FastMCP` implementation at `mcp.server.fastmcp` and registers seven tools:
 
 ```json
 {

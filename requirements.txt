@@ -1,5 +1,8 @@
 # Windows Repair Tool (LTSC + all Windows 10/11 editions)
 customtkinter>=5.2.2
 
+# Optional MCP host integration. The v2 Python SDK exposes FastMCP under this path.
+mcp>=1.28,<2
+
 # Optional - only needed to build the standalone executable:
 # pyinstaller>=6.0

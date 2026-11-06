@@ -40,9 +40,9 @@ from repair_core.eventlog import EventLog
 from repair_core.runner import Runner
 
 try:  # The MCP SDK is a runtime dependency, not required for schema dumping.
-    from mcp.server.mcpserver import MCPServer
+    from mcp.server.fastmcp import FastMCP
 except ImportError:  # pragma: no cover - exercised only in --dump-schemas
-    MCPServer = None
+    FastMCP = None
 
 EN_STRINGS = strings_mod.STRINGS["EN"]
 
@@ -98,7 +98,7 @@ DESTRUCTIVE_TOOLS = {"reboot_system"}
 
 _LOCK = threading.Lock()
 
-mcp = MCPServer("windows-ltsc-repair") if MCPServer else None  # pragma: no cover
+mcp = FastMCP("windows-ltsc-repair") if FastMCP else None  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
