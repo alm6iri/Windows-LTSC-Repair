@@ -1045,6 +1045,27 @@ class TestGuiAppLogic(unittest.TestCase):
             os.remove(log_path)
 
 
+class TestMCPServer(unittest.TestCase):
+    def test_detect_platform_returns_structured_success(self):
+        import mcp_server
+
+        fake_info = {
+            "is_windows": True,
+            "is_admin": True,
+            "label": "Windows test host",
+        }
+        with mock.patch.object(
+            mcp_server.platform_info, "detect", return_value=fake_info
+        ):
+            result = mcp_server._detect_platform()
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["target_system"], "Windows test host")
+        self.assertEqual(
+            result["events"][0]["message"], "Target system: Windows test host"
+        )
+
+
 class TestBootHelpers(unittest.TestCase):
     """Degradation contracts for the FixTool boot layer - the UAC /
     elevation / DPI path, which is the most safety-critical boot code in

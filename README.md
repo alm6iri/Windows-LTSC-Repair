@@ -26,7 +26,7 @@ to switch language; Arabic content uses right-to-left layout.
 - Structured logging and Arabic/English application strings.
 - MCP server (`mcp_server.py`) exposing seven tools: platform detection, five
   repair actions, and a reboot action guarded by an explicit confirmation value.
-- 75 unit tests that mock Windows-specific behavior; Windows-only skips are reported separately.
+- 76 unit tests that mock Windows-specific behavior; Windows-only skips are reported separately.
 
 ## Safety
 

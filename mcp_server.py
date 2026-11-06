@@ -198,9 +198,9 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[st
             )
 
         runner = Runner(_on_event(eventlog))
-        runner.log(start_key, level="info")
+        runner.note(start_key, level="info")
         module.repair(runner, info)
-        runner.log(end_key, level="info")
+        runner.note(end_key, level="info")
         return _build_response(
             tool,
             eventlog,
@@ -232,7 +232,7 @@ def _detect_platform() -> dict[str, Any]:
     try:
         info = platform_info.detect()
         runner = Runner(_on_event(eventlog))
-        runner.log("sys_lbl", params=(info.get("label", "?"),), level="info")
+        runner.note("sys_lbl", params=(info.get("label", "?"),), level="info")
         return _build_response(
             "detect_platform",
             eventlog,
