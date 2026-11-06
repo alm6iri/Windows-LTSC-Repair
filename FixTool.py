@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Project:  Windows Repair Tool (LTSC + all Windows 10/11 editions)
 GUI:      CustomTkinter front-end. All repair logic lives in repair_core.
@@ -12,36 +11,40 @@ Boot sequence:
      buttons disabled while running, live streaming log.
 """
 
-import os
-import sys
 import ctypes
+import os
 import subprocess
+import sys
 import threading
 import time
+from typing import ClassVar
+
+from repair_core import __version__ as CORE_VERSION
 
 # ---------------------------------------------------------------------------
 # Core engine (platform-independent and unit-testable without Windows)
 # ---------------------------------------------------------------------------
-from repair_core import platform_info
-from repair_core import network_repair
-from repair_core import update_repair
-from repair_core import time_repair
-from repair_core import system_repair
-from repair_core import disk_repair
+from repair_core import (
+    disk_repair,
+    network_repair,
+    platform_info,
+    system_repair,
+    time_repair,
+    update_repair,
+)
 from repair_core import strings as strings_mod
-from repair_core import __version__ as CORE_VERSION
 from repair_core.eventlog import EventLog
 from repair_core.runner import Runner
-
 
 # ---------------------------------------------------------------------------
 # Boot helpers (no customtkinter dependency - usable pre-GUI)
 # ---------------------------------------------------------------------------
 
+
 def _is_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -50,7 +53,7 @@ def _message_box(text, caption, kind="error"):
     try:
         icon = 0x40 if kind == "info" else 0x10
         ctypes.windll.user32.MessageBoxW(0, text, caption, icon)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -70,17 +73,18 @@ def _relaunch_elevated():
         # value can be truncated on 64-bit Windows.
         shell32.ShellExecuteW.restype = ctypes.c_void_p
         shell32.ShellExecuteW.argtypes = [
-            ctypes.c_void_p,        # hwnd
-            ctypes.c_wchar_p,       # lpVerb
-            ctypes.c_wchar_p,       # lpFile
-            ctypes.c_wchar_p,       # lpParameters
-            ctypes.c_wchar_p,       # lpDirectory
-            ctypes.c_int,           # nShowCmd
+            ctypes.c_void_p,  # hwnd
+            ctypes.c_wchar_p,  # lpVerb
+            ctypes.c_wchar_p,  # lpFile
+            ctypes.c_wchar_p,  # lpParameters
+            ctypes.c_wchar_p,  # lpDirectory
+            ctypes.c_int,  # nShowCmd
         ]
         ret = shell32.ShellExecuteW(
-            None, "runas", sys.executable, params or None, None, 1)
+            None, "runas", sys.executable, params or None, None, 1
+        )
         return 0 if ret is None else int(ret)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0
 
 
@@ -95,13 +99,17 @@ def _enable_dpi_awareness():
     Do not "upgrade" this to PMv2 without changing the GUI toolkit."""
     try:
         ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def _try_load_gui():
+    """Load the GUI only on Windows, regardless of installed packages."""
+    if os.name != "nt":
+        return None
     try:
         import customtkinter as ctk
+
         return ctk
     except ImportError:
         ar = strings_mod.STRINGS["AR"]
@@ -113,11 +121,12 @@ def _try_load_gui():
 # The application
 # ---------------------------------------------------------------------------
 
-class WindowsRepairApp(object):
+
+class WindowsRepairApp:
     """Composition root: wires the GUI to the repair_core engine."""
 
     # operation id -> (module, start-key, end-key)
-    OPERATIONS = {
+    OPERATIONS: ClassVar[dict] = {
         "net": (network_repair, "net_start", "net_end"),
         "upd": (update_repair, "upd_start", "upd_end"),
         "time": (time_repair, "time_start", "time_end"),
@@ -153,7 +162,7 @@ class WindowsRepairApp(object):
     def _window_title(self):
         """Window title carries the release version (single source of
         truth: repair_core.__version__)."""
-        return "{0} v{1}".format(self.s["title_win"], CORE_VERSION)
+        return "{} v{}".format(self.s["title_win"], CORE_VERSION)
 
     def _on_core_event(self, key, params, raw, level):
         """Runner callback - executes on worker threads. Only appends to
@@ -169,13 +178,14 @@ class WindowsRepairApp(object):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             candidates.append(os.path.join(meipass, "app_icon.ico"))
-        candidates.append(os.path.join(
-            os.path.dirname(os.path.abspath(sys.argv[0])), "app_icon.ico"))
+        candidates.append(
+            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "app_icon.ico")
+        )
         for icon in candidates:
             if os.path.isfile(icon):
                 try:
                     self.root.iconbitmap(icon)
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 return
 
@@ -186,90 +196,136 @@ class WindowsRepairApp(object):
         self.root.resizable(False, False)
 
         self.title_label = self.ctk.CTkLabel(
-            self.root, text=s["header"],
+            self.root,
+            text=s["header"],
             font=self.ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
-            text_color="#61AFEF")
+            text_color="#61AFEF",
+        )
         self.title_label.pack(pady=(15, 2))
 
         self.subtitle_label = self.ctk.CTkLabel(
-            self.root, text=s["subheader"],
+            self.root,
+            text=s["subheader"],
             font=self.ctk.CTkFont(family="Segoe UI", size=11, slant="italic"),
-            text_color="#ABB2BF")
+            text_color="#ABB2BF",
+        )
         self.subtitle_label.pack(pady=(0, 4))
 
         self.sysinfo_label = self.ctk.CTkLabel(
-            self.root, text=s["sys_lbl"].format(self.info.summary()),
+            self.root,
+            text=s["sys_lbl"].format(self.info.summary()),
             font=self.ctk.CTkFont(family="Segoe UI", size=11),
-            text_color="#98C379")
+            text_color="#98C379",
+        )
         self.sysinfo_label.pack(pady=(0, 12))
 
         # ---- action buttons column ----
-        self.button_frame = self.ctk.CTkFrame(self.root, width=230,
-                                              corner_radius=10)
+        self.button_frame = self.ctk.CTkFrame(self.root, width=230, corner_radius=10)
         self.button_frame.pack_propagate(False)
 
         def make_button(text, color, hover, text_color, cmd):
             return self.ctk.CTkButton(
-                self.button_frame, text=text, fg_color=color,
-                hover_color=hover, text_color=text_color,
-                font=self.ctk.CTkFont(family="Segoe UI", size=12,
-                                      weight="bold"),
-                height=32, command=cmd)
+                self.button_frame,
+                text=text,
+                fg_color=color,
+                hover_color=hover,
+                text_color=text_color,
+                font=self.ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                height=32,
+                command=cmd,
+            )
 
         self.btn_net = make_button(
-            s["btn_net"], "#98C379", "#7CB342", "#1E1E1E",
-            lambda: self._run_operation("net"))
+            s["btn_net"],
+            "#98C379",
+            "#7CB342",
+            "#1E1E1E",
+            lambda: self._run_operation("net"),
+        )
         self.btn_upd = make_button(
-            s["btn_upd"], "#E5C07B", "#D1A139", "#1E1E1E",
-            lambda: self._run_operation("upd"))
+            s["btn_upd"],
+            "#E5C07B",
+            "#D1A139",
+            "#1E1E1E",
+            lambda: self._run_operation("upd"),
+        )
         self.btn_time = make_button(
-            s["btn_time"], "#61AFEF", "#4B96DB", "#1E1E1E",
-            lambda: self._run_operation("time"))
+            s["btn_time"],
+            "#61AFEF",
+            "#4B96DB",
+            "#1E1E1E",
+            lambda: self._run_operation("time"),
+        )
         self.btn_sys = make_button(
-            s["btn_sys"], "#C678DD", "#A85BD3", "#1E1E1E",
-            lambda: self._run_operation("sys"))
+            s["btn_sys"],
+            "#C678DD",
+            "#A85BD3",
+            "#1E1E1E",
+            lambda: self._run_operation("sys"),
+        )
         self.btn_disk = make_button(
-            s["btn_disk"], "#56B6C2", "#3E999F", "#1E1E1E",
-            lambda: self._run_operation("disk"))
+            s["btn_disk"],
+            "#56B6C2",
+            "#3E999F",
+            "#1E1E1E",
+            lambda: self._run_operation("disk"),
+        )
         self.btn_reboot = make_button(
-            s["btn_reboot"], "#E06C75", "#D32F2F", "#FFFFFF",
-            self.show_reboot_window)
+            s["btn_reboot"], "#E06C75", "#D32F2F", "#FFFFFF", self.show_reboot_window
+        )
         self.btn_lang = make_button(
-            s["lang_btn"], "#4B5263", "#5C6370", "#FFFFFF",
-            self.toggle_language)
+            s["lang_btn"], "#4B5263", "#5C6370", "#FFFFFF", self.toggle_language
+        )
 
-        for btn in (self.btn_net, self.btn_upd, self.btn_time,
-                    self.btn_sys, self.btn_disk):
+        for btn in (
+            self.btn_net,
+            self.btn_upd,
+            self.btn_time,
+            self.btn_sys,
+            self.btn_disk,
+        ):
             btn.pack(pady=(10, 0), padx=15, fill="x")
         self.btn_lang.pack(pady=(10, 0), padx=15, fill="x")
         self.btn_reboot.pack(pady=(25, 10), padx=15, fill="x")
 
-        self._action_buttons = [self.btn_net, self.btn_upd, self.btn_time,
-                                self.btn_sys, self.btn_disk]
+        self._action_buttons = [
+            self.btn_net,
+            self.btn_upd,
+            self.btn_time,
+            self.btn_sys,
+            self.btn_disk,
+        ]
 
         # ---- log panel ----
         self.log_frame = self.ctk.CTkFrame(self.root, corner_radius=10)
         self.log_label = self.ctk.CTkLabel(
-            self.log_frame, text=s["log_lbl"],
-            font=self.ctk.CTkFont(family="Segoe UI", size=12, weight="bold"))
+            self.log_frame,
+            text=s["log_lbl"],
+            font=self.ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+        )
         self.log_label.pack(anchor=s["anchor"], padx=15, pady=5)
 
         self.log_text = self.ctk.CTkTextbox(
             self.log_frame,
             font=self.ctk.CTkFont(family="Consolas", size=11),
-            fg_color="#1E1E1E", text_color="#ABB2BF", wrap="word")
+            fg_color="#1E1E1E",
+            text_color="#ABB2BF",
+            wrap="word",
+        )
         self.log_text.pack(fill="both", expand=True, padx=15, pady=(0, 10))
         self.log_text.configure(state="disabled")
 
         # ---- status bar ----
         self.status_label = self.ctk.CTkLabel(
-            self.root, text=s["status_ready"],
+            self.root,
+            text=s["status_ready"],
             font=self.ctk.CTkFont(family="Segoe UI", size=11),
-            text_color="#98C379", anchor=s["anchor"])
+            text_color="#98C379",
+            anchor=s["anchor"],
+        )
         self.status_label.pack(fill="x", padx=20, pady=(0, 8))
 
         self._apply_layout_direction()
-
 
     # ------------------------------------------------------- layout / i18n
     def _apply_layout_direction(self):
@@ -277,10 +333,10 @@ class WindowsRepairApp(object):
         s = self.s
         self.button_frame.pack_forget()
         self.log_frame.pack_forget()
-        self.button_frame.pack(side=s["side_btn"], fill="y",
-                               padx=20, pady=(0, 10))
-        self.log_frame.pack(side=s["side_log"], fill="both", expand=True,
-                            padx=20, pady=(0, 10))
+        self.button_frame.pack(side=s["side_btn"], fill="y", padx=20, pady=(0, 10))
+        self.log_frame.pack(
+            side=s["side_log"], fill="both", expand=True, padx=20, pady=(0, 10)
+        )
         self.log_text.configure(state="normal")
         self.log_text.tag_config("align", justify=s["justify"])
         self.log_text.configure(state="disabled")
@@ -292,8 +348,7 @@ class WindowsRepairApp(object):
         self.root.title(self._window_title())
         self.title_label.configure(text=s["header"])
         self.subtitle_label.configure(text=s["subheader"])
-        self.sysinfo_label.configure(
-            text=s["sys_lbl"].format(self.info.summary()))
+        self.sysinfo_label.configure(text=s["sys_lbl"].format(self.info.summary()))
         self.btn_net.configure(text=s["btn_net"])
         self.btn_upd.configure(text=s["btn_upd"])
         self.btn_time.configure(text=s["btn_time"])
@@ -307,7 +362,8 @@ class WindowsRepairApp(object):
         self.status_label.configure(
             text=s["status_busy"] if busy else s["status_ready"],
             text_color="#E5C07B" if busy else "#98C379",
-            anchor=s["anchor"])
+            anchor=s["anchor"],
+        )
         # Re-apply the pack anchor: pack options are NOT updated by
         # configure(), so without this the log caption would keep its old
         # RTL/LTR alignment after a language switch (mirroring bug).
@@ -328,23 +384,25 @@ class WindowsRepairApp(object):
                 self._pending_busy_off = False
                 self._set_busy(False)
             self._refresh()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         finally:
             try:
                 self.root.after(250, self._poll_log)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 # Window already destroyed - nothing left to pump.
                 pass
 
     def _refresh(self, force=False):
         entries = self.log.entries[:]  # snapshot: workers append concurrently
-        if (not force
-                and self.lang == getattr(self, "_rendered_lang", None)
-                and len(entries) >= self._rendered_count):
+        if (
+            not force
+            and self.lang == getattr(self, "_rendered_lang", None)
+            and len(entries) >= self._rendered_count
+        ):
             # Append-only fast path: re-inserting the whole history on
             # every poll is O(n^2) while DISM/CHKDSK stream output.
-            new_entries = entries[self._rendered_count:]
+            new_entries = entries[self._rendered_count :]
             if not new_entries:
                 return
             self._append_log_lines(self.log.render(self.s, new_entries))
@@ -378,7 +436,6 @@ class WindowsRepairApp(object):
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
-
     # ------------------------------------------------------------ operations
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"
@@ -389,7 +446,8 @@ class WindowsRepairApp(object):
         self.btn_reboot.configure(state=state)
         self.status_label.configure(
             text=self.s["status_busy"] if busy else self.s["status_ready"],
-            text_color="#E5C07B" if busy else "#98C379")
+            text_color="#E5C07B" if busy else "#98C379",
+        )
 
     def _run_operation(self, op_id):
         """Race-free dispatch: a non-blocking lock guarantees only one
@@ -404,7 +462,7 @@ class WindowsRepairApp(object):
             result = {}
             try:
                 result = module.repair(self.runner, self.info) or {}
-            except Exception as exc:  # never let a worker kill the app
+            except Exception as exc:  # noqa: BLE001 - log worker failure and keep UI responsive
                 self.log.add("err_generic", (str(exc),), level="warn")
             finally:
                 self.log.add(end_key)
@@ -433,12 +491,14 @@ class WindowsRepairApp(object):
             # without a grab, so never let this abort the callback.
             win.update_idletasks()
             win.grab_set()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         lbl = self.ctk.CTkLabel(
-            win, text=s["reboot_msg"],
-            font=self.ctk.CTkFont(family="Segoe UI", size=13, weight="bold"))
+            win,
+            text=s["reboot_msg"],
+            font=self.ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+        )
         lbl.pack(pady=20)
 
         frame = self.ctk.CTkFrame(win, fg_color="transparent")
@@ -449,10 +509,13 @@ class WindowsRepairApp(object):
             try:
                 result = subprocess.run(
                     ["shutdown", "/r", "/t", "0", "/f"],
-                    capture_output=True, text=True, errors="replace",
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    check=False,
                     timeout=15,
-                    creationflags=getattr(
-                        subprocess, "CREATE_NO_WINDOW", 0))
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
             except (OSError, subprocess.SubprocessError) as exc:
                 self.log.add("reboot_failed", (str(exc),), level="warn")
                 return
@@ -461,17 +524,25 @@ class WindowsRepairApp(object):
                 if detail:
                     detail = detail.splitlines()[0][:160]
                 else:
-                    detail = "exit code {0}".format(result.returncode)
+                    detail = f"exit code {result.returncode}"
                 self.log.add("reboot_failed", (detail,), level="warn")
 
         self.ctk.CTkButton(
-            frame, text=s["reboot_yes"], fg_color="#E06C75",
-            hover_color="#D32F2F", width=140,
-            command=do_reboot).grid(row=0, column=0, padx=10)
+            frame,
+            text=s["reboot_yes"],
+            fg_color="#E06C75",
+            hover_color="#D32F2F",
+            width=140,
+            command=do_reboot,
+        ).grid(row=0, column=0, padx=10)
         self.ctk.CTkButton(
-            frame, text=s["reboot_no"], fg_color="#4B5263",
-            hover_color="#5C6370", width=140,
-            command=win.destroy).grid(row=0, column=1, padx=10)
+            frame,
+            text=s["reboot_no"],
+            fg_color="#4B5263",
+            hover_color="#5C6370",
+            width=140,
+            command=win.destroy,
+        ).grid(row=0, column=1, padx=10)
 
     def run(self):
         self.root.mainloop()
@@ -480,6 +551,7 @@ class WindowsRepairApp(object):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     # 1. Platform guard (dev/CI sandbox friendly) - localized message.
@@ -492,8 +564,10 @@ def main():
     if not _is_admin():
         ret = _relaunch_elevated()
         if ret <= 32:
-            _message_box(strings_mod.STRINGS["AR"]["err_admin_msg"],
-                         strings_mod.STRINGS["AR"]["err_admin_title"])
+            _message_box(
+                strings_mod.STRINGS["AR"]["err_admin_msg"],
+                strings_mod.STRINGS["AR"]["err_admin_title"],
+            )
             return 1
         return 0  # elevated copy is starting; this instance steps aside.
 
@@ -507,13 +581,14 @@ def main():
     try:
         app = WindowsRepairApp(ctk)
         app.run()
-    except Exception as exc:
-        _message_box(strings_mod.STRINGS["AR"]["err_generic"].format(exc),
-                     "Windows Repair Tool")
+    except Exception as exc:  # noqa: BLE001 - show startup failure to the user
+        _message_box(
+            strings_mod.STRINGS["AR"]["err_generic"].format(exc),
+            "Windows Repair Tool",
+        )
         return 1
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

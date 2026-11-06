@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 MCP Server for Windows-LTSC-Repair.
 
@@ -20,12 +19,18 @@ Design invariants:
 import json
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from repair_core import __version__ as CORE_VERSION
-from repair_core import disk_repair, network_repair, platform_info
+from repair_core import (
+    disk_repair,
+    network_repair,
+    platform_info,
+    system_repair,
+    time_repair,
+    update_repair,
+)
 from repair_core import strings as strings_mod
-from repair_core import system_repair, time_repair, update_repair
 from repair_core.eventlog import EventLog
 from repair_core.runner import Runner
 
@@ -95,18 +100,19 @@ mcp = FastMCP("windows-ltsc-repair") if FastMCP else None  # pragma: no cover
 # Structured response helpers
 # ---------------------------------------------------------------------------
 
-def _translate(key: Optional[str], params: tuple) -> Optional[str]:
+
+def _translate(key: str | None, params: tuple) -> str | None:
     """Render a translatable event key in English (the AI lingua franca).
     Returns None for raw-only entries."""
     if not key:
         return None
     try:
         return EN_STRINGS[key].format(*params)
-    except Exception:
+    except Exception:  # noqa: BLE001 - malformed translation data degrades to None
         return None
 
 
-def _event_to_json(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _event_to_json(entry: dict[str, Any]) -> dict[str, Any]:
     out = {
         "ts": entry.get("ts"),
         "level": entry.get("level", "info"),
@@ -116,19 +122,26 @@ def _event_to_json(entry: Dict[str, Any]) -> Dict[str, Any]:
     if raw is not None:
         out["raw"] = raw
     if out["message"] is None and raw is None:
-        out["message"] = "(untranslated event: %s)" % entry.get("key")
+        out["message"] = "(untranslated event: {})".format(entry.get("key"))
     return out
 
 
 def _on_event(eventlog: EventLog) -> None:
     """Runner callback - appends events into the shared log store."""
+
     def handler(key=None, params=(), raw=None, level="info", ts=None):
         eventlog.add(key=key, params=params, raw=raw, level=level, ts=ts)
+
     return handler
 
 
-def _build_response(tool: str, eventlog: EventLog, started: float,
-                    status: str, extra: Optional[Dict] = None) -> Dict[str, Any]:
+def _build_response(
+    tool: str,
+    eventlog: EventLog,
+    started: float,
+    status: str,
+    extra: dict | None = None,
+) -> dict[str, Any]:
     payload = {
         "tool": tool,
         "status": status,
@@ -142,7 +155,7 @@ def _build_response(tool: str, eventlog: EventLog, started: float,
     return payload
 
 
-def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> Dict[str, Any]:
+def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> dict[str, Any]:
     """Shared executor for all repair tools."""
     if not _LOCK.acquire(blocking=False):
         return {
@@ -150,7 +163,7 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> Dict[st
             "status": "busy",
             "engine_version": CORE_VERSION,
             "error": "Another repair is already running in this server "
-                     "instance. Wait for it to finish before starting a new one.",
+            "instance. Wait for it to finish before starting a new one.",
         }
 
     started = time.time()
@@ -158,75 +171,139 @@ def _run_repair_tool(tool: str, module, start_key: str, end_key: str) -> Dict[st
     try:
         info = platform_info.detect()
         if not info.get("is_windows"):
-            return _build_response(tool, eventlog, started, "blocked", {
-                "error": "This tool only works on Windows hosts.",
-            })
+            return _build_response(
+                tool,
+                eventlog,
+                started,
+                "blocked",
+                {
+                    "error": "This tool only works on Windows hosts.",
+                },
+            )
         if not info.get("is_admin"):
-            return _build_response(tool, eventlog, started, "blocked", {
-                "error": "Administrator privileges are required. Relaunch "
-                         "the MCP server elevated (UAC) and retry.",
-                "target_system": info.get("label"),
-            })
+            return _build_response(
+                tool,
+                eventlog,
+                started,
+                "blocked",
+                {
+                    "error": "Administrator privileges are required. Relaunch "
+                    "the MCP server elevated (UAC) and retry.",
+                    "target_system": info.get("label"),
+                },
+            )
 
         runner = Runner(_on_event(eventlog))
         runner.log(start_key, level="info")
         module.repair(runner, info)
         runner.log(end_key, level="info")
-        return _build_response(tool, eventlog, started, "success", {
-            "target_system": info.get("label"),
-            "reboot_recommended": tool in {"run_network_repair", "run_disk_repair",
-                                           "run_update_repair"},
-        })
+        return _build_response(
+            tool,
+            eventlog,
+            started,
+            "success",
+            {
+                "target_system": info.get("label"),
+                "reboot_recommended": tool
+                in {"run_network_repair", "run_disk_repair", "run_update_repair"},
+            },
+        )
     except Exception as exc:  # noqa: BLE001 - structured failure for the agent
-        return _build_response(tool, eventlog, started, "failed", {
-            "error": "%s: %s" % (type(exc).__name__, exc),
-        })
+        return _build_response(
+            tool,
+            eventlog,
+            started,
+            "failed",
+            {
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
     finally:
         _LOCK.release()
 
 
-def _detect_platform() -> Dict[str, Any]:
+def _detect_platform() -> dict[str, Any]:
     started = time.time()
     eventlog = EventLog()
     try:
         info = platform_info.detect()
         runner = Runner(_on_event(eventlog))
         runner.log("sys_lbl", params=(info.get("label", "?"),), level="info")
-        return _build_response("detect_platform", eventlog, started, "success", {
-            "target_system": info.get("label"),
-            "details": info,
-        })
+        return _build_response(
+            "detect_platform",
+            eventlog,
+            started,
+            "success",
+            {
+                "target_system": info.get("label"),
+                "details": info,
+            },
+        )
     except Exception as exc:  # noqa: BLE001
-        return _build_response("detect_platform", eventlog, started, "failed", {
-            "error": "%s: %s" % (type(exc).__name__, exc),
-        })
+        return _build_response(
+            "detect_platform",
+            eventlog,
+            started,
+            "failed",
+            {
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
 
 
-def _reboot_system(confirm: bool) -> Dict[str, Any]:
+def _reboot_system(confirm: bool) -> dict[str, Any]:
     """Elevated reboot - gated behind an explicit boolean confirmation."""
     started = time.time()
     eventlog = EventLog()
     if not confirm:
-        return _build_response("reboot_system", eventlog, started, "rejected", {
-            "error": "confirm must be true. Ask the user first.",
-        })
+        return _build_response(
+            "reboot_system",
+            eventlog,
+            started,
+            "rejected",
+            {
+                "error": "confirm must be true. Ask the user first.",
+            },
+        )
     try:
         info = platform_info.detect()
         if not info.get("is_admin"):
-            return _build_response("reboot_system", eventlog, started, "blocked", {
-                "error": "Administrator privileges are required.",
-            })
+            return _build_response(
+                "reboot_system",
+                eventlog,
+                started,
+                "blocked",
+                {
+                    "error": "Administrator privileges are required.",
+                },
+            )
         import subprocess
-        subprocess.run(["shutdown", "/r", "/t", "5"], check=True,
-                       creationflags=subprocess.CREATE_NO_WINDOW)
-        return _build_response("reboot_system", eventlog, started, "success", {
-            "target_system": info.get("label"),
-            "note": "Reboot scheduled in 5 seconds (shutdown /r /t 5).",
-        })
+
+        subprocess.run(
+            ["shutdown", "/r", "/t", "5"],
+            check=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return _build_response(
+            "reboot_system",
+            eventlog,
+            started,
+            "success",
+            {
+                "target_system": info.get("label"),
+                "note": "Reboot scheduled in 5 seconds (shutdown /r /t 5).",
+            },
+        )
     except Exception as exc:  # noqa: BLE001
-        return _build_response("reboot_system", eventlog, started, "failed", {
-            "error": "%s: %s" % (type(exc).__name__, exc),
-        })
+        return _build_response(
+            "reboot_system",
+            eventlog,
+            started,
+            "failed",
+            {
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -236,42 +313,47 @@ def _reboot_system(confirm: bool) -> Dict[str, Any]:
 if mcp is not None:  # pragma: no cover - runtime path only
 
     @mcp.tool()
-    def detect_platform() -> Dict[str, Any]:
+    def detect_platform() -> dict[str, Any]:
         """Read-only Windows detection: edition, build, elevation, arch."""
         return _detect_platform()
 
     @mcp.tool()
-    def run_network_repair() -> Dict[str, Any]:
+    def run_network_repair() -> dict[str, Any]:
         """Deep network stack repair (Winsock/TCP-IP reset, service rebuild)."""
-        return _run_repair_tool("run_network_repair", network_repair,
-                                "net_start", "net_end")
+        return _run_repair_tool(
+            "run_network_repair", network_repair, "net_start", "net_end"
+        )
 
     @mcp.tool()
-    def run_update_repair() -> Dict[str, Any]:
+    def run_update_repair() -> dict[str, Any]:
         """Windows Update maintenance (archive stores, rebuild services)."""
-        return _run_repair_tool("run_update_repair", update_repair,
-                                "upd_start", "upd_end")
+        return _run_repair_tool(
+            "run_update_repair", update_repair, "upd_start", "upd_end"
+        )
 
     @mcp.tool()
-    def run_time_repair() -> Dict[str, Any]:
+    def run_time_repair() -> dict[str, Any]:
         """Windows Time service re-registration and NTP resync."""
-        return _run_repair_tool("run_time_repair", time_repair,
-                                "time_start", "time_end")
+        return _run_repair_tool(
+            "run_time_repair", time_repair, "time_start", "time_end"
+        )
 
     @mcp.tool()
-    def run_system_repair() -> Dict[str, Any]:
+    def run_system_repair() -> dict[str, Any]:
         """SFC + DISM deep system-file repair. Long-running."""
-        return _run_repair_tool("run_system_repair", system_repair,
-                                "sys_start", "sys_end")
+        return _run_repair_tool(
+            "run_system_repair", system_repair, "sys_start", "sys_end"
+        )
 
     @mcp.tool()
-    def run_disk_repair() -> Dict[str, Any]:
+    def run_disk_repair() -> dict[str, Any]:
         """CHKDSK filesystem health check; may schedule a reboot scan."""
-        return _run_repair_tool("run_disk_repair", disk_repair,
-                                "disk_start", "disk_end")
+        return _run_repair_tool(
+            "run_disk_repair", disk_repair, "disk_start", "disk_end"
+        )
 
     @mcp.tool()
-    def reboot_system(confirm: bool) -> Dict[str, Any]:
+    def reboot_system(confirm: bool) -> dict[str, Any]:
         """Reboot the machine to apply pending repairs. Requires confirm=true."""
         return _reboot_system(confirm)
 
@@ -280,12 +362,13 @@ if mcp is not None:  # pragma: no cover - runtime path only
 # CLI: dump function-calling schemas for OpenAI/Anthropic style agents
 # ---------------------------------------------------------------------------
 
-def dump_schemas(path: Optional[str] = None) -> List[Dict[str, Any]]:
+
+def dump_schemas(path: str | None = None) -> list[dict[str, Any]]:
     """Generate OpenAPI/Function-Calling JSON Schemas for every tool."""
     props = {}
     required = []
     for name, desc in TOOL_DESCRIPTIONS.items():
-        schema: Dict[str, Any] = {"type": "object", "properties": {}}
+        schema: dict[str, Any] = {"type": "object", "properties": {}}
         if name == "reboot_system":
             schema["properties"]["confirm"] = {
                 "type": "boolean",
@@ -316,9 +399,13 @@ def dump_schemas(path: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description="Windows-LTSC-Repair MCP server")
-    parser.add_argument("--dump-schemas", metavar="PATH",
-                        help="Write function-calling JSON schemas to PATH and exit")
+    parser.add_argument(
+        "--dump-schemas",
+        metavar="PATH",
+        help="Write function-calling JSON schemas to PATH and exit",
+    )
     args = parser.parse_args()
     if args.dump_schemas:
         dump_schemas(args.dump_schemas)
